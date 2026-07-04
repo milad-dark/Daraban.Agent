@@ -69,7 +69,7 @@ public class WinrmRemoteCollector
                 {
                     var p = line.Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()).ToList();
                     if (p.Count >= 3)
-                        content.Memories.Add(new MemoryInfo { Capacity = $"{int.Parse(p[0]) / 1024} MB", Speed = p[1], Type = p[2] });
+                        content.Memories.Add(new MemoryInfo { Capacity = int.Parse(p[0]) / 1024, Speed = long.Parse(p[1]), MemoryType = p[2] });
                 }
             }
 

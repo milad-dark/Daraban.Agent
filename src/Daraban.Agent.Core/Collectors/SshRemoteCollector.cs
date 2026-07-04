@@ -31,7 +31,7 @@ public class SshRemoteCollector
             var ramMatches = Regex.Matches(hwResult, @"Handle (\d+) DMID type (\d+), size (\d+) MB");
             foreach (Match m in ramMatches)
             {
-                content.Memories.Add(new MemoryInfo { Capacity = $"{int.Parse(m.Groups[3].Value)} MB", Type = m.Groups[2].Value });
+                content.Memories.Add(new MemoryInfo { Capacity = int.Parse(m.Groups[3].Value), MemoryType = m.Groups[2].Value });
             }
 
             // Get Disks (HDD/SSD)
