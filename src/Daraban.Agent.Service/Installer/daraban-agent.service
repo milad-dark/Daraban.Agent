@@ -1,0 +1,16 @@
+[Unit]
+Description=Daraban Agent
+After=network.target
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/dotnet /opt/daraban-agent/Daraban.Agent.Service.dll
+WorkingDirectory=/opt/daraban-agent
+Restart=always
+RestartSec=10
+SyslogIdentifier=daraban-agent
+User=daraban-agent
+Environment=DOTNET_ENVIRONMENT=Production
+
+[Install]
+WantedBy=multi-user.target

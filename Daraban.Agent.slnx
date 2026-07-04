@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Daraban.Agent.Cli/Daraban.Agent.Cli.csproj" />
+    <Project Path="src/Daraban.Agent.Core/Daraban.Agent.Core.csproj" />
+    <Project Path="src/Daraban.Agent.Service/Daraban.Agent.Service.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Daraban.Agent.Tests/Daraban.Agent.Tests.csproj" />
+  </Folder>
+</Solution>
