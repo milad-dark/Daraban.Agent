@@ -109,7 +109,6 @@ public class WinrmRemoteCollector
                 </ s:Envelope >
             """;
 
-
         var content = new StringContent(soap, Encoding.UTF8, "application/soap+xml");
         var response = await _http.PostAsync("", content, ct);
         response.EnsureSuccessStatusCode();
@@ -152,6 +151,7 @@ public class WinrmRemoteCollector
                   < s:Body >< rsp:rsp = ""http://schemas.microsoft.com/wbem/wbem/wscim/v1" xml:lang=""en-US" w:ResourceURI=""http://schemas.microsoft.com/wbem/wsman/1/windows/shell/{shellId}"/></s:Body>
                 </ s:Envelope >
             """;
+
         var content = new StringContent(soap, Encoding.UTF8, "application/soap+xml");
         await _http.PostAsync("", content, ct);
     }

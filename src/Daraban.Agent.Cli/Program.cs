@@ -13,101 +13,80 @@ class Program
 {
     static async Task<int> Main(string[] args)
     {
-        // Define options at root level
-        var serverOpt = new Option<string?>("--server")
-        {
-            Description = "GLPI server base URL (e.g. https://glpi.example.com)"
-        };
+        // ---- Target / transport ------------------------------------------------------
+        var serverOpt = new Option<string?>("--server") { Description = "Server base URL, e.g. http://localhost:5000" };
+        var localOpt = new Option<string?>("--local") { Description = "Write results to this local directory instead of sending to a server" };
+        var tagOpt = new Option<string?>("--tag") { Description = "Device id reported to the server (defaults to the machine name)" };
+        var apiKeyOpt = new Option<string?>("--api-key") { Description = "Sent as the X-Api-Key header on every request, once server-side auth is enabled" };
 
-        var localOpt = new Option<string?>("--local")
-        {
-            Description = "Local directory to write results instead of sending to server"
-        };
-
+        // ---- Task selection -------------------------------------------------------------
         var tasksOpt = new Option<string?>("--tasks")
-        {
-            Description = "Comma-separated list of tasks to run (local,netdiscovery,remote)"
-        };
+        { Description = "Comma-separated tasks to run: local,netdiscovery,netinventory,remote,wakeonlan,deploy,esx (default: local)" };
+        var noTaskOpt = new Option<string?>("--no-task") { Description = "Comma-separated tasks to skip" };
 
-        var noTaskOpt = new Option<string?>("--no-task")
-        {
-            Description = "Comma-separated list of tasks to skip"
-        };
+        // ---- Scheduling (daemon / service mode) ------------------------------------------
+        var delayOpt = new Option<int>("--delay") { Description = "Seconds between scheduled runs", DefaultValueFactory = _ => 3600 };
+        var lazyOpt = new Option<bool>("--lazy") { Description = "Add random jitter before each run, like glpi-agent --lazy", DefaultValueFactory = _ => false };
+        var onceOpt = new Option<bool>("--once") { Description = "Run the selected tasks a single time and exit (default: loop forever on --delay)", DefaultValueFactory = _ => false };
 
-        var httpPortOpt = new Option<int>("--http-port")
-        {
-            Description = "Agent HTTP interface port",
-            DefaultValueFactory = _ => 62354
-        };
+        // ---- HTTP status interface --------------------------------------------------------
+        var httpPortOpt = new Option<int>("--http-port") { Description = "Agent HTTP status interface port", DefaultValueFactory = _ => 62354 };
+        var httpTrustOpt = new Option<string?>("--http-trust") { Description = "CIDR range allowed to query the status endpoint" };
+        var noHttpdOpt = new Option<bool>("--no-httpd") { Description = "Disable the HTTP status interface", DefaultValueFactory = _ => false };
 
-        var noHttpdOpt = new Option<bool>("--no-httpd")
-        {
-            Description = "Disable the HTTP status interface",
-            DefaultValueFactory = _ => false
-        };
-        // Options to control the collector
-        var methodOpt = new Option<string>("--method")
-        {
-            Description = "Inventory method: local, ssh, snmp, winrm",
-            Required = true,
-            DefaultValueFactory = _ => "local"
-        };
-        var hostOpt = new Option<string>("--host")
-        {
-            Description = "Target host (for ssh, snmp, winrm)",
-            DefaultValueFactory = _ => "192.168.1.1"
-        };
-        var userOpt = new Option<string>("--user")
-        {
-            Description = "Username (for ssh/winrm)",
-            DefaultValueFactory = _ => "root"
-        };
-        var passOpt = new Option<string>("--password")
-        {
-            Description = "Password (for ssh/winrm)",
-            DefaultValueFactory = _ => "password"
-        };
-        var fileOpt = new Option<string>("--file")
-        {
-            Description = "Output JSON file path",
-            DefaultValueFactory = _ => "inventory.json"
-        };
+        // ---- NetDiscovery / NetInventory ------------------------------------------------------
+        var ipRangeOpt = new Option<string?>("--ip-range") { Description = "CIDR range to sweep, e.g. 192.168.1.0/24 (netdiscovery/netinventory)" };
+        var communityOpt = new Option<string>("--snmp-community") { Description = "SNMP community string", DefaultValueFactory = _ => "public" };
+        var snmpTimeoutOpt = new Option<int>("--snmp-timeout") { Description = "SNMP timeout in ms", DefaultValueFactory = _ => 2000 };
+        var threadsOpt = new Option<int>("--discovery-threads") { Description = "Parallel probes for netdiscovery/netinventory", DefaultValueFactory = _ => 32 };
+
+        // ---- WakeOnLan --------------------------------------------------------------------------
+        var wolMacOpt = new Option<string?>("--wol-mac") { Description = "Comma-separated MAC addresses to wake" };
+        var wolBroadcastOpt = new Option<string?>("--wol-broadcast") { Description = "Broadcast address for WoL packets (default 255.255.255.255)" };
+
+        // ---- Deploy --------------------------------------------------------------------------------
+        var deployWorkDirOpt = new Option<string?>("--deploy-workdir") { Description = "Directory to stage downloaded deploy files (default: temp)" };
+
+        // ---- ESX / vCenter --------------------------------------------------------------------------
+        var esxHostOpt = new Option<string?>("--esx-host") { Description = "vCenter/ESXi hostname or IP" };
+        var esxUserOpt = new Option<string?>("--esx-user") { Description = "vCenter/ESXi username" };
+        var esxPasswordOpt = new Option<string?>("--esx-password") { Description = "vCenter/ESXi password" };
+
+        // ---- Legacy one-off collector (kept for quick manual testing) ---------------------------------
+        var methodOpt = new Option<string?>("--method") { Description = "One-off collector to run directly, bypassing the task pipeline: local, ssh, snmp, winrm" };
+        var hostOpt = new Option<string>("--host") { Description = "Target host (ssh/snmp/winrm)", DefaultValueFactory = _ => "192.168.1.1" };
+        var userOpt = new Option<string>("--user") { Description = "Username (ssh/winrm)", DefaultValueFactory = _ => "root" };
+        var passOpt = new Option<string>("--password") { Description = "Password (ssh/winrm) or SNMP community", DefaultValueFactory = _ => "password" };
+        var fileOpt = new Option<string>("--file") { Description = "Output JSON file path for --method mode", DefaultValueFactory = _ => "inventory.json" };
 
         var rootCommand = new RootCommand("Daraban Agent CLI")
         {
-            serverOpt,
-            localOpt,
-            tasksOpt,
-            noTaskOpt,
-            httpPortOpt,
-            noHttpdOpt,
-            methodOpt,
-            hostOpt,
-            userOpt,
-            passOpt,
-            fileOpt
+            serverOpt, localOpt, tagOpt, apiKeyOpt,
+            tasksOpt, noTaskOpt,
+            delayOpt, lazyOpt, onceOpt,
+            httpPortOpt, httpTrustOpt, noHttpdOpt,
+            ipRangeOpt, communityOpt, snmpTimeoutOpt, threadsOpt,
+            wolMacOpt, wolBroadcastOpt,
+            deployWorkDirOpt,
+            esxHostOpt, esxUserOpt, esxPasswordOpt,
+            methodOpt, hostOpt, userOpt, passOpt, fileOpt
         };
 
-        // Set action directly on root command
-        rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
+        rootCommand.SetAction(async (ParseResult pr, CancellationToken ct) =>
         {
-            var method = parseResult.GetValue(methodOpt);
-
-            // If method is specified, run inventory collection mode
+            var method = pr.GetValue(methodOpt);
             if (!string.IsNullOrWhiteSpace(method))
-            {
-                return await RunInventoryCollectionAsync(parseResult, methodOpt, hostOpt, userOpt, passOpt, fileOpt, cancellationToken);
-            }
+                return await RunOneOffCollectorAsync(method, pr.GetValue(hostOpt)!, pr.GetValue(userOpt)!, pr.GetValue(passOpt)!, pr.GetValue(fileOpt)!, ct);
 
-            // Otherwise, run as agent with tasks
-            return await RunAgentTasksAsync(parseResult, serverOpt, localOpt, tasksOpt, noTaskOpt, httpPortOpt, noHttpdOpt, cancellationToken);
+            var options = BuildOptions(pr, serverOpt, localOpt, tagOpt, apiKeyOpt, tasksOpt, noTaskOpt,
+                delayOpt, lazyOpt, onceOpt, httpPortOpt, httpTrustOpt, noHttpdOpt,
+                ipRangeOpt, communityOpt, snmpTimeoutOpt, threadsOpt,
+                wolMacOpt, wolBroadcastOpt, deployWorkDirOpt, esxHostOpt, esxUserOpt, esxPasswordOpt);
+
+            return await RunAgentAsync(options, ct);
         });
 
-        // Add netdiscovery and remote subcommands
-        rootCommand.Subcommands.Add(CreateNetdiscoveryCommand());
-        rootCommand.Subcommands.Add(CreateRemoteCommand());
-
-        //return await rootCommand.Parse(args).InvokeAsync();
+        rootCommand.Subcommands.Add(CreateListTasksCommand());
 
         var result = await rootCommand.Parse(args).InvokeAsync();
 
@@ -115,170 +94,64 @@ class Program
         Console.WriteLine("\nPress any key to exit...");
         Console.ReadKey();
 #endif
-
         return result;
     }
 
-    static Command CreateNetdiscoveryCommand()
+    // ------------------------------------------------------------------
+    // Full agent run: prolog + selected tasks, once or forever (--once).
+    // Same code path a Windows/systemd service uses via AgentRunner.
+    // ------------------------------------------------------------------
+    static async Task<int> RunAgentAsync(AgentOptions options, CancellationToken ct)
     {
-        var cmd = new Command("netdiscovery", "Run network discovery (like glpi-netdiscovery)");
+        var status = new AgentStatusTracker();
+        var runner = new AgentRunner(TaskRegistry.All, status);
 
-        cmd.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
-        {
-            var options = new AgentOptions();
-            options.Tasks.Add("netdiscovery");
+        if (!options.NoHttpd)
+            _ = RunStatusServerAsync(options.HttpPort, options.HttpTrust, status, ct);
 
-            var task = TaskRegistry.Find("netdiscovery");
-            if (task != null)
-            {
-                Console.WriteLine("[agent] Running task: netdiscovery");
-                await task.RunAsync(options, cancellationToken);
-            }
-            else
-            {
-                Console.Error.WriteLine("Unknown task: netdiscovery");
-                return 1;
-            }
-
-            return 0;
-        });
-
-        return cmd;
-    }
-
-    static Command CreateRemoteCommand()
-    {
-        var cmd = new Command("remote", "Run remote (agentless) inventory (like glpi-remote)");
-
-        cmd.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
-        {
-            var options = new AgentOptions();
-            options.Tasks.Add("remote");
-
-            var task = TaskRegistry.Find("remote");
-            if (task != null)
-            {
-                Console.WriteLine("[agent] Running task: remote");
-                await task.RunAsync(options, cancellationToken);
-            }
-            else
-            {
-                Console.Error.WriteLine("Unknown task: remote");
-                return 1;
-            }
-
-            return 0;
-        });
-
-        return cmd;
-    }
-
-    static async Task<int> RunInventoryCollectionAsync(ParseResult parseResult, Option<string?> methodOpt, Option<string> hostOpt, Option<string> userOpt, Option<string> passOpt, Option<string> fileOpt, CancellationToken ct)
-    {
-        var method = parseResult.GetValue(methodOpt);
-        var host = parseResult.GetValue(hostOpt);
-        var user = parseResult.GetValue(userOpt);
-        var password = parseResult.GetValue(passOpt);
-        var file = parseResult.GetValue(fileOpt);
-
-        DeviceInventory? inventory = null;
-
-        Console.WriteLine($"[agent] Running {method} inventory...");
+        // Ctrl+C should stop the loop cleanly instead of killing the process mid-task.
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
         try
         {
-            switch (method?.ToLower())
-            {
-                case "local":
-                    var localCollector = new LocalWindowsCollector();
-                    inventory = localCollector.CollectLocal();
-                    break;
-                case "ssh":
-                    var sshCollector = new SshRemoteCollector();
-                    inventory = await sshCollector.CollectAsync(host, user, password, ct);
-                    break;
-                case "winrm":
-                    var winrmCollector = new WinrmRemoteCollector(host, user, password);
-                    inventory = await winrmCollector.CollectAsync(ct);
-                    break;
-                case "snmp":
-                    var snmpCollector = new SnmpNetworkCollector();
-                    inventory = await snmpCollector.DiscoverAsync(host, password, timeoutMs: 3000, ct: ct);
-                    break;
-                default:
-                    Console.Error.WriteLine($"Unknown method: {method}");
-                    return 1;
-            }
+            if (options.RunOnce)
+                await runner.RunOnceAsync(options, cts.Token);
+            else
+                await runner.RunForeverAsync(options, cts.Token);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException)
         {
-            Console.Error.WriteLine($"[agent] Error: {ex.Message}");
-            return 1;
-        }
-
-        if (inventory != null)
-        {
-            // Pretty print the JSON to console for checking
-            var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
-            string prettyJson = JsonSerializer.Serialize(inventory, jsonOptions);
-
-            Console.WriteLine("--- INVENTORY JSON START ---");
-            Console.WriteLine(prettyJson);
-            Console.WriteLine("--- INVENTORY JSON END ---");
-
-            // Save to file
-            File.WriteAllText(file, prettyJson);
-            Console.WriteLine($"\n[agent] Inventory successfully saved to: {Path.GetFullPath(file)}");
+            Console.WriteLine("\n[agent] Stopped.");
         }
 
         return 0;
     }
 
-    static async Task<int> RunAgentTasksAsync(ParseResult parseResult, Option<string?> serverOpt, Option<string?> localOpt, Option<string?> tasksOpt, Option<string?> noTaskOpt, Option<int> httpPortOpt, Option<bool> noHttpdOpt, CancellationToken cancellationToken)
+    static async Task RunStatusServerAsync(int port, string? httpTrust, AgentStatusTracker status, CancellationToken ct)
     {
-        var options = new AgentOptions
+        try
         {
-            Server = parseResult.GetValue(serverOpt),
-            Local = parseResult.GetValue(localOpt),
-            HttpPort = parseResult.GetValue(httpPortOpt),
-            NoHttpd = parseResult.GetValue(noHttpdOpt),
-        };
-
-        // Parse --tasks and --no-task
-        var tasksRaw = parseResult.GetValue(tasksOpt);
-        if (!string.IsNullOrWhiteSpace(tasksRaw))
-            options.Tasks.AddRange(tasksRaw.Split(',', StringSplitOptions.RemoveEmptyEntries));
-
-        var noTaskRaw = parseResult.GetValue(noTaskOpt);
-        if (!string.IsNullOrWhiteSpace(noTaskRaw))
-            options.NoTasks.AddRange(noTaskRaw.Split(',', StringSplitOptions.RemoveEmptyEntries));
-
-        // Determine effective task list
-        var effective = TaskRegistry.All.Keys
-            .Where(t => options.Tasks.Contains(t) || (options.Tasks.Count == 0 && t == "local"))
-            .Where(t => !options.NoTasks.Contains(t))
-            .ToList();
-
-        // Start HTTP status endpoint (optional)
-        if (!options.NoHttpd)
-        {
-            _ = RunStatusServerAsync(options.HttpPort, cancellationToken);
+            var app = StatusEndpoint.BuildMinimalWeb(port, status, httpTrust);
+            Console.WriteLine($"[agent] HTTP status interface listening on port {port} (/status).");
+            await app.RunAsync(ct);
         }
-
-        // Run tasks
-        foreach (var taskName in effective)
+        catch (Exception ex)
         {
-            var task = TaskRegistry.Find(taskName);
-            if (task == null)
-            {
-                Console.Error.WriteLine($"Unknown task: {taskName}");
-                continue;
-            }
-            Console.WriteLine($"[agent] Running task: {taskName}");
-            await task.RunAsync(options, cancellationToken);
+            Console.Error.WriteLine($"[agent] Failed to start HTTP interface: {ex.Message}");
         }
+    }
 
-        return 0;
+    static Command CreateListTasksCommand()
+    {
+        var cmd = new Command("list-tasks", "List every task this agent build knows about");
+        cmd.SetAction(_ =>
+        {
+            foreach (var task in TaskRegistry.All)
+                Console.WriteLine(task.Name);
+            return Task.FromResult(0);
+        });
+        return cmd;
     }
 
     static async Task RunStatusServerAsync(int port, CancellationToken cancellationToken)
@@ -293,5 +166,88 @@ class Program
         {
             Console.Error.WriteLine($"[agent] Failed to start HTTP interface: {ex.Message}");
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Legacy quick collector — runs a single collector directly and dumps JSON.
+    // Handy for "does this actually see the hardware" checks without a server.
+    // ------------------------------------------------------------------
+    static async Task<int> RunOneOffCollectorAsync(string method, string host, string user, string password, string file, CancellationToken ct)
+    {
+        DeviceInventory? inventory;
+        Console.WriteLine($"[agent] Running {method} inventory...");
+
+        try
+        {
+            inventory = method.ToLowerInvariant() switch
+            {
+                "local" => LocalCollectorFactory.CollectLocal(),
+                "ssh" => await new SshRemoteCollector().CollectAsync(host, user, password, ct),
+                "winrm" => await new WinrmRemoteCollector(host, user, password).CollectAsync(ct),
+                "snmp" => await new SnmpNetworkCollector().DiscoverAsync(host, password, 3000, ct),
+                _ => throw new ArgumentException($"Unknown method: {method}")
+            };
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[agent] Error: {ex.Message}");
+            return 1;
+        }
+
+        var json = JsonSerializer.Serialize(inventory, new JsonSerializerOptions { WriteIndented = true });
+        Console.WriteLine("--- INVENTORY JSON START ---");
+        Console.WriteLine(json);
+        Console.WriteLine("--- INVENTORY JSON END ---");
+        await File.WriteAllTextAsync(file, json, ct);
+        Console.WriteLine($"\n[agent] Inventory saved to: {Path.GetFullPath(file)}");
+        return 0;
+    }
+
+    static AgentOptions BuildOptions(
+        ParseResult pr,
+        Option<string?> serverOpt, Option<string?> localOpt, Option<string?> tagOpt, Option<string?> apiKeyOpt,
+        Option<string?> tasksOpt, Option<string?> noTaskOpt,
+        Option<int> delayOpt, Option<bool> lazyOpt, Option<bool> onceOpt,
+        Option<int> httpPortOpt, Option<string?> httpTrustOpt, Option<bool> noHttpdOpt,
+        Option<string?> ipRangeOpt, Option<string> communityOpt, Option<int> snmpTimeoutOpt, Option<int> threadsOpt,
+        Option<string?> wolMacOpt, Option<string?> wolBroadcastOpt, Option<string?> deployWorkDirOpt,
+        Option<string?> esxHostOpt, Option<string?> esxUserOpt, Option<string?> esxPasswordOpt)
+    {
+        var options = new AgentOptions
+        {
+            Server = pr.GetValue(serverOpt),
+            Local = pr.GetValue(localOpt),
+            Tag = pr.GetValue(tagOpt),
+            ApiKey = pr.GetValue(apiKeyOpt),
+            DelayTimeSeconds = pr.GetValue(delayOpt),
+            Lazy = pr.GetValue(lazyOpt),
+            RunOnce = pr.GetValue(onceOpt),
+            HttpPort = pr.GetValue(httpPortOpt),
+            HttpTrust = pr.GetValue(httpTrustOpt),
+            NoHttpd = pr.GetValue(noHttpdOpt),
+            IpRange = pr.GetValue(ipRangeOpt),
+            SnmpCommunity = pr.GetValue(communityOpt) ?? "public",
+            SnmpTimeoutMs = pr.GetValue(snmpTimeoutOpt),
+            DiscoveryThreads = pr.GetValue(threadsOpt),
+            WakeOnLanBroadcast = pr.GetValue(wolBroadcastOpt),
+            DeployWorkDir = pr.GetValue(deployWorkDirOpt),
+            EsxHost = pr.GetValue(esxHostOpt),
+            EsxUser = pr.GetValue(esxUserOpt),
+            EsxPassword = pr.GetValue(esxPasswordOpt)
+        };
+
+        var tasksRaw = pr.GetValue(tasksOpt);
+        if (!string.IsNullOrWhiteSpace(tasksRaw))
+            options.Tasks.AddRange(tasksRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+        var noTaskRaw = pr.GetValue(noTaskOpt);
+        if (!string.IsNullOrWhiteSpace(noTaskRaw))
+            options.NoTasks.AddRange(noTaskRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+        var wolMacRaw = pr.GetValue(wolMacOpt);
+        if (!string.IsNullOrWhiteSpace(wolMacRaw))
+            options.WakeOnLanMacs.AddRange(wolMacRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+        return options;
     }
 }

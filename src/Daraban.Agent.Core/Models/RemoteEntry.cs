@@ -1,4 +1,4 @@
-﻿namespace Daraban.Agent.Core.Config;
+﻿namespace Daraban.Agent.Core.Models;
 
 public sealed class RemoteEntry
 {

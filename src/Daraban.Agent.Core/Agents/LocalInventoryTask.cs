@@ -43,7 +43,7 @@ public sealed class LocalInventoryTask : IAgentTask
         }
         else if (!string.IsNullOrWhiteSpace(options.Server))
         {
-            var client = new GlpiClient(new HttpClient { BaseAddress = new Uri(options.Server) });
+            var client = new DarabanClient(new HttpClient { BaseAddress = new Uri(options.Server) });
             await client.PostInventoryAsync(json, ct);
             Console.WriteLine("[local] Inventory sent to server.");
         }
