@@ -15,6 +15,12 @@ public static class LocalCollectorFactory
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             return new LocalWindowsCollector().CollectLocal();
 
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            return new LocalLinuxCollector().CollectLocal();
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            return new LocalMacCollector().CollectLocal();
+
         throw new PlatformNotSupportedException(
             $"No local inventory collector implemented for {RuntimeInformation.OSDescription}");
     }

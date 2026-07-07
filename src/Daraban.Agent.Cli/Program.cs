@@ -72,7 +72,7 @@ class Program
             methodOpt, hostOpt, userOpt, passOpt, fileOpt
         };
 
-        rootCommand.SetAction(async (ParseResult pr, CancellationToken ct) =>
+        rootCommand.SetAction(async (pr, ct) =>
         {
             var method = pr.GetValue(methodOpt);
             if (!string.IsNullOrWhiteSpace(method))
@@ -203,8 +203,7 @@ class Program
         return 0;
     }
 
-    static AgentOptions BuildOptions(
-        ParseResult pr,
+    static AgentOptions BuildOptions(ParseResult pr,
         Option<string?> serverOpt, Option<string?> localOpt, Option<string?> tagOpt, Option<string?> apiKeyOpt,
         Option<string?> tasksOpt, Option<string?> noTaskOpt,
         Option<int> delayOpt, Option<bool> lazyOpt, Option<bool> onceOpt,

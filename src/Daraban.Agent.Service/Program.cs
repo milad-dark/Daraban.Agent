@@ -1,16 +1,29 @@
 using Daraban.Agent.Core.Agents;
 using Daraban.Agent.Core.Config;
 using Daraban.Agent.Core.Http;
+using Daraban.Agent.Service;
+using Microsoft.Extensions.Options;
 
 var builder = Host.CreateDefaultBuilder(args);
 builder.ConfigureServices((ctx, services) =>
 {
-    // Bind agent options from config (see appsettings.json below)
+    // Bind agent options from config (see appsettings.json)
     services.Configure<AgentOptions>(ctx.Configuration.GetSection("Agent"));
+
+    services.AddSingleton<AgentStatusTracker>();
+
+    // Every task the CLI knows about, so the service and CLI never drift apart on capability.
     services.AddSingleton<IAgentTask, LocalInventoryTask>();
     services.AddSingleton<IAgentTask, NetDiscoveryTask>();
+    services.AddSingleton<IAgentTask, NetInventoryTask>();
     services.AddSingleton<IAgentTask, RemoteInventoryTask>();
-    // Add others as you implement them
+    services.AddSingleton<IAgentTask, WakeOnLanTask>();
+    services.AddSingleton<IAgentTask, DeployTask>();
+    services.AddSingleton<IAgentTask, EsxInventoryTask>();
+
+    // This line was missing before, which meant Worker never ran at all —
+    // the service process stayed up but did no scheduled work.
+    services.AddHostedService<Worker>();
 });
 
 builder.ConfigureHostOptions(o =>
@@ -21,12 +34,23 @@ builder.ConfigureHostOptions(o =>
 
 var host = builder.Build();
 
-// Start HTTP status endpoint in background (like GLPI agent on :62354)【turn0search11】
-_ = Task.Run(async () =>
+var agentOptions = host.Services.GetRequiredService<IOptions<AgentOptions>>().Value;
+if (!agentOptions.NoHttpd)
 {
-    var app = StatusEndpoint.BuildMinimalWeb(62354);
-    Console.WriteLine("[service] HTTP status interface listening on port 62354.");
-    await app.RunAsync();
-});
+    var tracker = host.Services.GetRequiredService<AgentStatusTracker>();
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            var app = StatusEndpoint.BuildMinimalWeb(agentOptions.HttpPort, tracker, agentOptions.HttpTrust);
+            Console.WriteLine($"[service] HTTP status interface listening on port {agentOptions.HttpPort} (/status).");
+            await app.RunAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[service] Failed to start HTTP status interface: {ex.Message}");
+        }
+    });
+}
 
 await host.RunAsync();

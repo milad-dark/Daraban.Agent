@@ -94,7 +94,7 @@ public sealed class AgentRunner(IEnumerable<IAgentTask> tasks, AgentStatusTracke
     {
         try
         {
-            // "Lazy" mirrors glpi-agent's --lazy: add a small random jitter so a fleet of
+            // "Lazy" mirrors daraban-agent's --lazy: add a small random jitter so a fleet of
             // agents restarted at the same time (e.g. after a patch reboot wave) doesn't
             // all hit the server in the same second.
             if (options.Lazy)
