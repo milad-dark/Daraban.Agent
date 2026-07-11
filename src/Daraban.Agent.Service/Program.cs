@@ -1,6 +1,7 @@
 using Daraban.Agent.Core.Agents;
 using Daraban.Agent.Core.Config;
 using Daraban.Agent.Core.Http;
+using Daraban.Agent.Core.Transport;
 using Daraban.Agent.Service;
 using Microsoft.Extensions.Options;
 
@@ -20,6 +21,16 @@ builder.ConfigureServices((ctx, services) =>
     services.AddSingleton<IAgentTask, WakeOnLanTask>();
     services.AddSingleton<IAgentTask, DeployTask>();
     services.AddSingleton<IAgentTask, EsxInventoryTask>();
+    services.AddSingleton<CollectTask>();
+
+    services.AddHttpClient<IDarabanClient, DarabanClient>((sp, client) =>
+    {
+        var opts = sp.GetRequiredService<IOptions<AgentOptions>>().Value;
+        if (!string.IsNullOrWhiteSpace(opts.Server))
+            client.BaseAddress = new Uri(opts.Server.TrimEnd('/') + "/");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Daraban.Agent/1.0");
+        client.Timeout = TimeSpan.FromSeconds(30);
+    });
 
     // This line was missing before, which meant Worker never ran at all —
     // the service process stayed up but did no scheduled work.

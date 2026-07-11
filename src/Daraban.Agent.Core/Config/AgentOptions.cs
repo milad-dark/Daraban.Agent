@@ -28,6 +28,23 @@ public sealed class AgentOptions
     // "Run once and exit" vs. the default "loop forever on DelayTimeSeconds" scheduler.
     public bool RunOnce { get; set; } = false;
 
+    /// <summary>
+    /// Unique identifier for this agent instance.
+    /// Sent with every POST so the server can correlate data to a machine
+    /// without relying on IP address (which can change).
+    /// Defaults to the machine's hostname if not explicitly set.
+    /// </summary>
+    public string? AgentId { get; set; } = Environment.GetEnvironmentVariable("DARABAN_AGENT_ID") ?? Environment.MachineName;
+
+    /// <summary>
+    /// When true, POST bodies are gzip-compressed before sending.
+    /// Mirrors glpi-agent's compression option — reduces bandwidth for
+    /// large inventory payloads on slow links.
+    /// </summary>
+    public bool UseGzip { get; set; } = false;
+    public int Threads { get; set; } = 4;
+
+
     // ---- NetDiscovery / NetInventory ----------------------------------------
     public string? IpRange { get; set; }          // e.g. "192.168.1.0/24"
     public string SnmpCommunity { get; set; } = "public";

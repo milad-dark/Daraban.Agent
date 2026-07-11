@@ -11,7 +11,7 @@ namespace Daraban.Agent.Core.Agents;
 /// </summary>
 public sealed class AgentRunner(IEnumerable<IAgentTask> tasks, AgentStatusTracker status)
 {
-    private readonly List<IAgentTask> _tasks = tasks.ToList();
+    private readonly List<IAgentTask> _tasks = [.. tasks];
 
     /// <summary>Runs the configured tasks immediately, then again every DelayTimeSeconds, until cancelled.</summary>
     public async Task RunForeverAsync(AgentOptions options, CancellationToken ct)

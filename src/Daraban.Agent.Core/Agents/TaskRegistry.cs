@@ -11,6 +11,7 @@ public static class TaskRegistry
         new WakeOnLanTask(),          // magic-packet wake-up for configured MACs
         new DeployTask(),             // pulls jobs from the server, installs, reports status
         new EsxInventoryTask(),       // vCenter/ESXi host + VM inventory
+        new CollectTask(),
     };
 
     public static IAgentTask? Find(string name) =>

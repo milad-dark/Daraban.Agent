@@ -1,4 +1,6 @@
-﻿using Daraban.Agent.Core.Models;
+﻿using Daraban.Agent.Core.Config;
+using Daraban.Agent.Core.Models;
+using Microsoft.Extensions.Logging;
 using System.IO.Compression;
 using System.Net.Http.Headers;
 using System.Text;
@@ -21,6 +23,8 @@ public sealed class DarabanClient : IDarabanClient
 {
     private readonly HttpClient _http;
     private readonly bool _useGzip;
+    private readonly AgentOptions _options;
+    private readonly ILogger<DarabanClient> _logger;
 
     public DarabanClient(HttpClient http, bool useGzip = true)
     {
@@ -117,10 +121,84 @@ public sealed class DarabanClient : IDarabanClient
     public Task PostDeployResultAsync(string deviceId, DeployJobResult result, CancellationToken ct = default)
         => SendEnvelopeAsync("/api/agent/deploy/result", deviceId, "deployResult", null, result, ct);
 
-    // ------------------------------------------------------------------
-    // Internals
-    // ------------------------------------------------------------------
+    // ── GET /api/agent/collect/jobs ───────────────────────────────────────────
 
+    /// <inheritdoc/>
+    public async Task<List<CollectJob>> GetCollectJobsAsync(CancellationToken ct)
+    {
+        var request = BuildRequest(
+            HttpMethod.Get,
+            "api/agent/collect/jobs");
+
+        try
+        {
+            var response = await _http.SendAsync(request, ct);
+
+            // 204 No Content = server has no pending jobs for this agent
+            if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            {
+                _logger.LogDebug("[collect] Server returned 204 — no pending jobs");
+                return [];
+            }
+
+            response.EnsureSuccessStatusCode();
+
+            var json = await response.Content.ReadAsStringAsync(ct);
+            var jobs = JsonSerializer.Deserialize<List<CollectJob>>(json, JsonOpts);
+
+            _logger.LogInformation("[collect] Fetched {Count} job(s) from server",
+                jobs?.Count ?? 0);
+
+            return jobs ?? [];
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "[collect] Failed to fetch collect jobs from server");
+            return [];     // graceful degradation — don't crash the task
+        }
+    }
+
+    // ── POST /api/agent/collect/results ──────────────────────────────────────
+
+    /// <inheritdoc/>
+    public async Task PostCollectResultsAsync(IList<CollectResult> results, CancellationToken ct)
+    {
+        if (results.Count == 0)
+        {
+            _logger.LogDebug("[collect] No results to post");
+            return;
+        }
+
+        var payload = new CollectResultsPayload
+        {
+            AgentId = _options.AgentId,
+            Timestamp = DateTime.UtcNow,
+            Results = results
+        };
+
+        var request = BuildRequest(
+            HttpMethod.Post,
+            "api/agent/collect/results");
+
+        request.Content = _options.UseGzip
+            ? await BuildGzipContentAsync(payload, ct)
+            : BuildJsonContent(payload);
+
+        try
+        {
+            var response = await _http.SendAsync(request, ct);
+            response.EnsureSuccessStatusCode();
+            _logger.LogInformation("[collect] Posted {Count} result(s) to server", results.Count);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "[collect] Failed to post collect results");
+            throw;   // let AgentRunner record failure in AgentStatusTracker
+        }
+    }
+
+
+    // Internals
     private Task SendEnvelopeAsync(string url, string deviceId, string action, string? itemtype, object content, CancellationToken ct)
     {
         var envelope = new
@@ -162,5 +240,54 @@ public sealed class DarabanClient : IDarabanClient
             var text = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             throw new HttpRequestException($"POST {url} failed: {(int)resp.StatusCode} {resp.ReasonPhrase} — {text}");
         }
+    }
+
+    /// <summary>
+    /// Builds an HttpRequestMessage with the base URL and optional API key header.
+    /// </summary>
+    private HttpRequestMessage BuildRequest(HttpMethod method, string relativeUrl)
+    {
+        var request = new HttpRequestMessage(method,
+            new Uri(_options.Server!.TrimEnd('/') + "/" + relativeUrl.TrimStart('/')));
+
+        if (!string.IsNullOrWhiteSpace(_options.ApiKey))
+            request.Headers.Add("X-Api-Key", _options.ApiKey);
+
+        return request;
+    }
+
+    /// <summary>Serializes <paramref name="payload"/> to a JSON <see cref="StringContent"/>.</summary>
+    private static StringContent BuildJsonContent<T>(T payload)
+    {
+        var json = JsonSerializer.Serialize(payload, JsonOpts);
+        return new StringContent(json, Encoding.UTF8, "application/json");
+    }
+
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+        WriteIndented = false
+    };
+
+    /// <summary>
+    /// Serializes <paramref name="payload"/> to gzip-compressed JSON.
+    /// Mirrors the same compression used by PostLocalInventoryAsync.
+    /// </summary>
+    private static async Task<ByteArrayContent> BuildGzipContentAsync<T>(T payload, CancellationToken ct)
+    {
+        var json = JsonSerializer.Serialize(payload, JsonOpts);
+        var jsonBytes = Encoding.UTF8.GetBytes(json);
+
+        using var ms = new MemoryStream();
+        await using var gz = new GZipStream(ms, CompressionLevel.Optimal);
+        await gz.WriteAsync(jsonBytes, ct);
+        await gz.FlushAsync(ct);
+
+        var compressed = ms.ToArray();
+        var content = new ByteArrayContent(compressed);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        content.Headers.ContentEncoding.Add("gzip");
+        return content;
     }
 }

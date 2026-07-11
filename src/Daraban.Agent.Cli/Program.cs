@@ -58,6 +58,8 @@ class Program
         var userOpt = new Option<string>("--user") { Description = "Username (ssh/winrm)", DefaultValueFactory = _ => "root" };
         var passOpt = new Option<string>("--password") { Description = "Password (ssh/winrm) or SNMP community", DefaultValueFactory = _ => "password" };
         var fileOpt = new Option<string>("--file") { Description = "Output JSON file path for --method mode", DefaultValueFactory = _ => "inventory.json" };
+        var agentIdOption = new Option<string?>(name: "--agent-id") { Description = "Unique identifier for this agent (default: machine hostname)" };
+        var gzipOption = new Option<bool>(name: "--gzip") { Description = "Compress POST payloads with gzip before sending to server" };
 
         var rootCommand = new RootCommand("Daraban Agent CLI")
         {
@@ -69,7 +71,8 @@ class Program
             wolMacOpt, wolBroadcastOpt,
             deployWorkDirOpt,
             esxHostOpt, esxUserOpt, esxPasswordOpt,
-            methodOpt, hostOpt, userOpt, passOpt, fileOpt
+            methodOpt, hostOpt, userOpt, passOpt, fileOpt,
+            agentIdOption, gzipOption,
         };
 
         rootCommand.SetAction(async (pr, ct) =>
@@ -81,7 +84,7 @@ class Program
             var options = BuildOptions(pr, serverOpt, localOpt, tagOpt, apiKeyOpt, tasksOpt, noTaskOpt,
                 delayOpt, lazyOpt, onceOpt, httpPortOpt, httpTrustOpt, noHttpdOpt,
                 ipRangeOpt, communityOpt, snmpTimeoutOpt, threadsOpt,
-                wolMacOpt, wolBroadcastOpt, deployWorkDirOpt, esxHostOpt, esxUserOpt, esxPasswordOpt);
+                wolMacOpt, wolBroadcastOpt, deployWorkDirOpt, esxHostOpt, esxUserOpt, esxPasswordOpt, agentIdOption, gzipOption);
 
             return await RunAgentAsync(options, ct);
         });
@@ -210,7 +213,7 @@ class Program
         Option<int> httpPortOpt, Option<string?> httpTrustOpt, Option<bool> noHttpdOpt,
         Option<string?> ipRangeOpt, Option<string> communityOpt, Option<int> snmpTimeoutOpt, Option<int> threadsOpt,
         Option<string?> wolMacOpt, Option<string?> wolBroadcastOpt, Option<string?> deployWorkDirOpt,
-        Option<string?> esxHostOpt, Option<string?> esxUserOpt, Option<string?> esxPasswordOpt)
+        Option<string?> esxHostOpt, Option<string?> esxUserOpt, Option<string?> esxPasswordOpt, Option<string> agentId, Option<bool> gzipOption)
     {
         var options = new AgentOptions
         {
@@ -232,7 +235,8 @@ class Program
             DeployWorkDir = pr.GetValue(deployWorkDirOpt),
             EsxHost = pr.GetValue(esxHostOpt),
             EsxUser = pr.GetValue(esxUserOpt),
-            EsxPassword = pr.GetValue(esxPasswordOpt)
+            EsxPassword = pr.GetValue(esxPasswordOpt),
+            UseGzip = pr.GetValue(gzipOption),
         };
 
         var tasksRaw = pr.GetValue(tasksOpt);
@@ -246,6 +250,9 @@ class Program
         var wolMacRaw = pr.GetValue(wolMacOpt);
         if (!string.IsNullOrWhiteSpace(wolMacRaw))
             options.WakeOnLanMacs.AddRange(wolMacRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+        if (pr.GetValue(agentId) is { } id)
+            options.AgentId = id;
 
         return options;
     }

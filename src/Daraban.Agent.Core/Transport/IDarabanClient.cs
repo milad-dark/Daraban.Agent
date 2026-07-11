@@ -29,4 +29,17 @@ public interface IDarabanClient
     Task<List<DeployJob>> GetPendingDeployJobsAsync(string deviceId, CancellationToken ct = default);
 
     Task PostDeployResultAsync(string deviceId, DeployJobResult result, CancellationToken ct = default);
+
+    /// <summary>
+    /// Fetches pending collect job definitions from the server.
+    /// Called at the start of each CollectTask run.
+    /// Returns empty list if server has no pending jobs for this agent.
+    /// </summary>
+    Task<List<CollectJob>> GetCollectJobsAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Posts the results of all executed collect jobs back to the server.
+    /// Mirrors the same gzip + api-key pattern used by all other POST methods.
+    /// </summary>
+    Task PostCollectResultsAsync(IList<CollectResult> results, CancellationToken ct);
 }
