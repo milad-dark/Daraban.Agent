@@ -4,7 +4,7 @@ public sealed class AgentOptions
 {
     // Target definition (like GLPI --server/--local)
     public string? Server { get; set; }   // send results to GLPI server (HTTP/HTTPS)
-    public string? Local { get; set; }    // write results locally to this directory
+    public string? Local { get; set; } = "./out";    // write results locally to this directory
 
     // Scheduling (mirrors --delaytime and --lazy)
     public int DelayTimeSeconds { get; set; } = 3600;

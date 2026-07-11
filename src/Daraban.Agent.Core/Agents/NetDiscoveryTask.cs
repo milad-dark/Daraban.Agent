@@ -4,13 +4,25 @@ using Daraban.Agent.Core.Transport;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Daraban.Agent.Core.Agents;
 
 /// <summary>
-/// Sweeps an IP range (ICMP ping + best-effort ARP/reverse-DNS) to find live hosts,
+/// Sweeps an IP range (ICMP ping) to find live hosts, then enriches with MAC/hostname,
 /// the same first step the real glpi-agent NetDiscovery task performs before NetInventory
 /// runs SNMP against whatever answered.
+///
+/// Two things this version fixes vs. the first pass:
+///  1. The agent's own IP never has a MAC in the OS's ARP/neighbor table (you don't ARP
+///     yourself) — that MAC now comes from the local NetworkInterface list instead.
+///  2. The ARP/neighbor table is read ONCE in bulk instead of shelling out to arp/ip once
+///     per address — faster, and avoids per-process race conditions that occasionally
+///     dropped entries.
+/// It also merges in devices that are present in the ARP cache but didn't answer ICMP
+/// (some phones/IoT devices block ping but still show up from recent traffic) — closer
+/// to what passive tools like GlassWire show, though still not identical: GlassWire keeps
+/// a *historical* device list; this is still a point-in-time sweep.
 /// </summary>
 public sealed class NetDiscoveryTask : IAgentTask
 {
@@ -28,6 +40,11 @@ public sealed class NetDiscoveryTask : IAgentTask
         var addresses = ExpandCidr(range).ToList();
         Console.WriteLine($"[netdiscovery] Scanning {addresses.Count} addresses in {range} ...");
 
+        // Read once, up front — cheaper than one process spawn per address, and this is
+        // also what makes the own-IP-MAC fix possible (see BuildLocalMacTable below).
+        var arpTable = ReadArpTable();
+        var localMacs = BuildLocalMacTable();
+
         var results = new List<DiscoveredHost>();
         using var throttle = new SemaphoreSlim(Math.Max(1, options.DiscoveryThreads));
 
@@ -36,7 +53,9 @@ public sealed class NetDiscoveryTask : IAgentTask
             await throttle.WaitAsync(ct);
             try
             {
-                results.Add(await ProbeAsync(ip, ct));
+                var host = await ProbeAsync(ip, arpTable, localMacs, ct);
+                lock (results)
+                    results.Add(host);
             }
             finally
             {
@@ -46,13 +65,37 @@ public sealed class NetDiscoveryTask : IAgentTask
 
         await Task.WhenAll(tasks);
 
-        var alive = results.Where(r => r.Responded).OrderBy(r => r.IpAddress, StringComparer.Ordinal).ToList();
-        Console.WriteLine($"[netdiscovery] {alive.Count} host(s) responded.");
+        // Merge in ARP-only entries: devices the OS already knows about (recent traffic)
+        // that didn't answer ICMP in this sweep — e.g. phones/IoT devices that block ping.
+        var seenIps = new HashSet<string>(results.Select(r => r.IpAddress));
+        foreach (var (ip, mac) in arpTable)
+        {
+            if (seenIps.Contains(ip))
+                continue;
+            if (!addresses.Any(a => a.ToString() == ip))
+                continue; // stay within the requested range
 
-        await DeliverAsync(options, alive, ct);
+            results.Add(new DiscoveredHost
+            {
+                IpAddress = ip,
+                MacAddress = mac,
+                Responded = false, // didn't answer ICMP, but is a known device on the LAN
+                Hostname = await ReverseDnsAsync(IPAddress.Parse(ip), ct)
+            });
+        }
+
+        var known = results.Where(r => r.Responded || r.MacAddress is not null)
+                            .OrderBy(r => ParseForSort(r.IpAddress))
+                            .ToList();
+
+        Console.WriteLine($"[netdiscovery] {results.Count(r => r.Responded)} host(s) answered ICMP; " +
+                           $"{known.Count} total known host(s) including ARP-only entries.");
+
+        await DeliverAsync(options, known, ct);
     }
 
-    private static async Task<DiscoveredHost> ProbeAsync(IPAddress ip, CancellationToken ct)
+    private static async Task<DiscoveredHost> ProbeAsync(
+        IPAddress ip, Dictionary<string, string> arpTable, Dictionary<string, string> localMacs, CancellationToken ct)
     {
         var host = new DiscoveredHost { IpAddress = ip.ToString() };
         try
@@ -64,7 +107,12 @@ public sealed class NetDiscoveryTask : IAgentTask
 
             if (host.Responded)
             {
-                host.MacAddress = LookupArp(ip);
+                // Own IP: not in the ARP table (you don't ARP yourself) — use the local
+                // interface's real MAC instead. Everyone else: look up in the ARP table
+                // we already read in bulk.
+                host.MacAddress = localMacs.GetValueOrDefault(host.IpAddress)
+                                   ?? arpTable.GetValueOrDefault(host.IpAddress);
+
                 host.Hostname = await ReverseDnsAsync(ip, ct);
             }
         }
@@ -75,37 +123,63 @@ public sealed class NetDiscoveryTask : IAgentTask
         return host;
     }
 
-    /// <summary>
-    /// Reads the OS ARP/neighbor table after a successful ping instead of crafting raw ARP
-    /// frames (which need raw sockets/admin rights); this mirrors what "arp -a" already knows.
-    /// </summary>
-    private static string? LookupArp(IPAddress ip)
+    /// <summary>Own machine's IP → MAC, straight from the network interfaces — never comes from ARP.</summary>
+    private static Dictionary<string, string> BuildLocalMacTable()
     {
+        var table = new Dictionary<string, string>();
         try
         {
-            if (OperatingSystem.IsWindows())
+            foreach (var iface in NetworkInterface.GetAllNetworkInterfaces())
             {
-                var output = RunCommand("arp", $"-a {ip}");
-                var m = System.Text.RegularExpressions.Regex.Match(output, @"([0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2}");
-                return m.Success ? m.Value.Replace('-', ':').ToUpperInvariant() : null;
-            }
-            else
-            {
-                // Linux/macOS: "ip neigh show <ip>" or fallback to "arp -n <ip>"
-                var output = RunCommand("ip", $"neigh show {ip}");
-                var m = System.Text.RegularExpressions.Regex.Match(output, @"([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}");
-                if (m.Success)
-                    return m.Value.ToUpperInvariant();
+                if (iface.OperationalStatus != OperationalStatus.Up)
+                    continue;
+                var mac = string.Join(":", iface.GetPhysicalAddress().GetAddressBytes().Select(b => b.ToString("X2")));
+                if (string.IsNullOrEmpty(mac) || mac.Replace(":", "") == "000000000000")
+                    continue;
 
-                output = RunCommand("arp", $"-n {ip}");
-                m = System.Text.RegularExpressions.Regex.Match(output, @"([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}");
-                return m.Success ? m.Value.ToUpperInvariant() : null;
+                foreach (var addr in iface.GetIPProperties().UnicastAddresses)
+                {
+                    if (addr.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                        table[addr.Address.ToString()] = mac;
+                }
             }
         }
         catch
         {
-            return null;
+            // best-effort — an empty table just means we fall back to ARP for everything
         }
+        return table;
+    }
+
+    /// <summary>Reads the whole ARP/neighbor table once, instead of shelling out per address.</summary>
+    private static Dictionary<string, string> ReadArpTable()
+    {
+        var table = new Dictionary<string, string>();
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                var output = RunCommand("arp", "-a");
+                foreach (Match m in Regex.Matches(output, @"(?<ip>\d+\.\d+\.\d+\.\d+)\s+(?<mac>([0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2})"))
+                    table[m.Groups["ip"].Value] = m.Groups["mac"].Value.Replace('-', ':').ToUpperInvariant();
+            }
+            else
+            {
+                // Linux: "ip neigh show" — macOS/BSD: "arp -an"
+                var output = RunCommand("ip", "neigh show");
+                if (string.IsNullOrWhiteSpace(output))
+                    output = RunCommand("arp", "-an");
+
+                foreach (Match m in Regex.Matches(output,
+                    @"(?<ip>\d+\.\d+\.\d+\.\d+)\D+(?<mac>([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2})"))
+                    table[m.Groups["ip"].Value] = m.Groups["mac"].Value.ToUpperInvariant();
+            }
+        }
+        catch
+        {
+            // best-effort — an empty table just means MAC lookups fall back to null for everyone
+        }
+        return table;
     }
 
     private static string RunCommand(string cmd, string args)
@@ -125,7 +199,7 @@ public sealed class NetDiscoveryTask : IAgentTask
             };
             p.Start();
             var output = p.StandardOutput.ReadToEnd();
-            p.WaitForExit(2000);
+            p.WaitForExit(3000);
             return output;
         }
         catch
@@ -139,7 +213,15 @@ public sealed class NetDiscoveryTask : IAgentTask
         try
         {
             var entry = await Dns.GetHostEntryAsync(ip);
-            return entry.HostName;
+            var name = entry.HostName;
+
+            // Docker's embedded DNS resolver can leak this name through to reverse lookups
+            // when the agent (or its host) has Docker networking involved — it is never a
+            // real LAN device name, so treat it the same as "no hostname found".
+            if (string.IsNullOrWhiteSpace(name) || name.EndsWith(".docker.internal", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            return name;
         }
         catch
         {
@@ -163,7 +245,6 @@ public sealed class NetDiscoveryTask : IAgentTask
         uint network = baseInt & mask;
         uint broadcast = network | ~mask;
 
-        // Skip network/broadcast addresses for anything larger than a /31 or /32.
         uint first = prefixLen >= 31 ? network : network + 1;
         uint last = prefixLen >= 31 ? broadcast : broadcast - 1;
 
@@ -176,19 +257,25 @@ public sealed class NetDiscoveryTask : IAgentTask
         }
     }
 
-    private static async Task DeliverAsync(AgentOptions options, List<DiscoveredHost> alive, CancellationToken ct)
+    private static uint ParseForSort(string ip)
+    {
+        var b = IPAddress.Parse(ip).GetAddressBytes();
+        return (uint)(b[0] << 24 | b[1] << 16 | b[2] << 8 | b[3]);
+    }
+
+    private static async Task DeliverAsync(AgentOptions options, List<DiscoveredHost> hosts, CancellationToken ct)
     {
         if (!string.IsNullOrWhiteSpace(options.Local))
         {
             Directory.CreateDirectory(options.Local);
             var file = Path.Combine(options.Local, $"netdiscovery-{DateTime.UtcNow:yyyyMMdd-HHmmss}.json");
-            await File.WriteAllTextAsync(file, JsonSerializer.Serialize(alive, new JsonSerializerOptions { WriteIndented = true }), ct);
+            await File.WriteAllTextAsync(file, JsonSerializer.Serialize(hosts, new JsonSerializerOptions { WriteIndented = true }), ct);
             Console.WriteLine($"[netdiscovery] Results written to {file}");
         }
         else if (!string.IsNullOrWhiteSpace(options.Server))
         {
             var client = DarabanClientFactory.Create(options);
-            await client.PostDiscoveryAsync(options.Tag ?? Environment.MachineName, alive, ct);
+            await client.PostDiscoveryAsync(options.Tag ?? Environment.MachineName, hosts, ct);
             Console.WriteLine("[netdiscovery] Results sent to server.");
         }
         else
