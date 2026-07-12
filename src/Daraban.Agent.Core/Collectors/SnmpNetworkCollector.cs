@@ -8,18 +8,16 @@ namespace Daraban.Agent.Core.Collectors;
 
 public class SnmpNetworkCollector
 {
-    // Standard OIDs for hardware discovery
+    // ── all your existing fields and methods stay exactly as they are ─────────
     private static readonly string OidSysDescr = "1.3.6.1.2.1.1.1.0";
     private static readonly string OidSysObjectID = "1.3.6.1.2.1.1.2.0";
     private static readonly string OidSysName = "1.3.6.1.2.1.1.5.0";
 
-    // Interface OIDs
-    private static readonly string OidIfDescr = "1.3.6.1.2.1.2.2.1.2";      // Interface description
-    private static readonly string OidIfPhysAddress = "1.3.6.1.2.1.2.2.1.6"; // MAC address
-    private static readonly string OidIfType = "1.3.6.1.2.1.2.2.1.3";        // Interface type
-    private static readonly string OidIfAdminStatus = "1.3.6.1.2.1.2.2.1.7"; // Admin status
+    private static readonly string OidIfDescr = "1.3.6.1.2.1.2.2.1.2";
+    private static readonly string OidIfPhysAddress = "1.3.6.1.2.1.2.2.1.6";
+    private static readonly string OidIfType = "1.3.6.1.2.1.2.2.1.3";
+    private static readonly string OidIfAdminStatus = "1.3.6.1.2.1.2.2.1.7";
 
-    // Storage OIDs (HOST-RESOURCES-MIB)
     private static readonly string OidHrStorageDescr = "1.3.6.1.2.1.25.2.3.1.3";
     private static readonly string OidHrStorageSize = "1.3.6.1.2.1.25.2.3.1.5";
     private static readonly string OidHrStorageUsed = "1.3.6.1.2.1.25.2.3.1.6";
@@ -32,17 +30,13 @@ public class SnmpNetworkCollector
 
         try
         {
-            // 1. Get System Info
             var sysDescr = await GetAsync(endpoint, community, OidSysDescr, timeoutMs);
             var sysName = await GetAsync(endpoint, community, OidSysName, timeoutMs);
 
             content.OperatingSystem = sysDescr ?? "Unknown";
             content.ComputerName = sysName ?? ipAddress;
 
-            // 2. Walk Network Interfaces
             await DiscoverNetworkInterfacesAsync(endpoint, community, content, ipAddress, timeoutMs, ct);
-
-            // 3. Walk Storage Devices
             await DiscoverStorageAsync(endpoint, community, content, timeoutMs, ct);
         }
         catch (Exception ex)
@@ -69,9 +63,7 @@ public class SnmpNetworkCollector
                 {
                     var physAddr = ifPhysAddresses[i].Data as OctetString;
                     if (physAddr != null)
-                    {
                         macAddress = BitConverter.ToString(physAddr.GetRaw()).Replace("-", ":");
-                    }
                 }
 
                 if (!string.IsNullOrWhiteSpace(description))
@@ -106,7 +98,6 @@ public class SnmpNetworkCollector
                 var sizeStr = storageSizes[i].Data.ToString();
                 var storageType = i < storageTypes.Count ? storageTypes[i].Data.ToString() : "";
 
-                // Only include physical disks
                 if (descr.Contains("Physical") || descr.Contains("Disk") || descr.Contains("/"))
                 {
                     if (long.TryParse(sizeStr, out var size) && size > 0)
@@ -160,14 +151,13 @@ public class SnmpNetworkCollector
         {
             try
             {
-                var walkMode = WalkMode.WithinSubtree;
-                var walked = Messenger.Walk(VersionCode.V2,
+                Messenger.Walk(VersionCode.V2,
                     endpoint,
                     new OctetString(community),
                     new ObjectIdentifier(rootOid),
                     results,
                     timeoutMs,
-                    walkMode);
+                    WalkMode.WithinSubtree);
             }
             catch (Exception ex)
             {
@@ -177,4 +167,57 @@ public class SnmpNetworkCollector
 
         return results;
     }
+
+    // ── NEW: lightweight 3-OID probe used by NetDiscoveryTask for fingerprinting ──
+    // Does NOT do a full walk — only fetches sysDescr, sysObjectID, sysName.
+    // Called once per discovered host, after ICMP/ARP already found it.
+    // Returns null if the host does not respond to SNMP at all.
+    public static async Task<SnmpFingerprint?> ProbeForDiscoveryAsync(
+        string ipAddress,
+        string community,
+        int timeoutMs)
+    {
+        var endpoint = new IPEndPoint(IPAddress.Parse(ipAddress), 161);
+
+        try
+        {
+            // Fire all 3 GETs concurrently — faster than sequential
+            var descrTask = GetAsync(endpoint, community, OidSysDescr, timeoutMs);
+            var objectIdTask = GetAsync(endpoint, community, OidSysObjectID, timeoutMs);
+            var nameTask = GetAsync(endpoint, community, OidSysName, timeoutMs);
+
+            await Task.WhenAll(descrTask, objectIdTask, nameTask);
+
+            var sysDescr = await descrTask;
+            var sysObjectId = await objectIdTask;
+            var sysName = await nameTask;
+
+            // If all 3 came back null the host is not speaking SNMP
+            if (sysDescr is null && sysObjectId is null && sysName is null)
+                return null;
+
+            return new SnmpFingerprint
+            {
+                SysDescr = sysDescr,
+                SysObjectId = sysObjectId,
+                SysName = sysName
+            };
+        }
+        catch
+        {
+            return null;    // host not reachable on SNMP — not an error, just not an SNMP device
+        }
+    }
+}
+
+/// <summary>
+/// Lightweight result from a 3-OID SNMP probe during NetDiscovery.
+/// Only the fields needed for fingerprinting — not a full inventory.
+/// Full inventory is done later by NetInventoryTask.
+/// </summary>
+public sealed class SnmpFingerprint
+{
+    public string? SysDescr { get; init; }
+    public string? SysObjectId { get; init; }
+    public string? SysName { get; init; }
 }
