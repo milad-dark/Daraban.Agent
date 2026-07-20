@@ -1,4 +1,5 @@
-﻿using Daraban.Agent.Core.Config;
+﻿using Daraban.Agent.Core.Collectors;
+using Daraban.Agent.Core.Config;
 using Daraban.Agent.Core.Transport;
 using System.Text.Json;
 
@@ -10,27 +11,9 @@ public sealed class LocalInventoryTask : IAgentTask
 
     public async Task RunAsync(AgentOptions options, CancellationToken ct)
     {
-        // TODO: collect OS/hardware/software/network info here.
-        // For now we emit a stub payload so the plumbing is testable.
-        var payload = new
-        {
-            action = "inventory",
-            content = new
-            {
-                deviceid = options.Tag ?? Environment.MachineName,
-                os = Environment.OSVersion.VersionString,
-                Cpu = "",
-                CpuUsage = Environment.CpuUsage.TotalTime,
-                Motherboard = "",
-                Ram = "",
-                Vga = "",
-                Hdd = "",
-                Network = "",
-                timestampUtc = DateTime.UtcNow
-            }
-        };
-
-        var json = JsonSerializer.Serialize(payload);
+        var inventory = LocalCollectorFactory.CollectLocal();
+        inventory.DeviceId = options.AgentId ?? options.Tag ?? Environment.MachineName;
+        var json = JsonSerializer.Serialize(inventory);
 
         if (!string.IsNullOrWhiteSpace(options.Local))
         {
@@ -43,7 +26,8 @@ public sealed class LocalInventoryTask : IAgentTask
         }
         else if (!string.IsNullOrWhiteSpace(options.Server))
         {
-            var client = new DarabanClient(new HttpClient { BaseAddress = new Uri(options.Server) });
+            var client = DarabanClientFactory.Create(options);
+            await client.PostInventoryAsync(inventory.DeviceId, inventory.Content, ct: ct);
             await client.PostInventoryAsync(json, ct);
             Console.WriteLine("[local] Inventory sent to server.");
         }

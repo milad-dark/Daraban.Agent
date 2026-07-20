@@ -4,7 +4,7 @@ public sealed class AgentOptions
 {
     // Target definition (like GLPI --server/--local)
     public string? Server { get; set; }   // send results to GLPI server (HTTP/HTTPS)
-    public string? Local { get; set; } = "./out";    // write results locally to this directory
+    public string? Local { get; set; }    // write results locally to this directory
 
     // Scheduling (mirrors --delaytime and --lazy)
     public int DelayTimeSeconds { get; set; } = 3600;
@@ -24,6 +24,13 @@ public sealed class AgentOptions
 
     // Sent as X-Api-Key header on every request once the server has auth enabled.
     public string? ApiKey { get; set; }
+
+    // OAuth2 client-credentials configuration. ClientSecret must be supplied by a secret
+    // provider/environment variable in production, never committed to appsettings.json.
+    public string? OAuthTokenEndpoint { get; set; }
+    public string? OAuthClientId { get; set; }
+    public string? OAuthClientSecret { get; set; }
+    public string? OAuthScope { get; set; } = "daraban.agent.inventory";
 
     // "Run once and exit" vs. the default "loop forever on DelayTimeSeconds" scheduler.
     public bool RunOnce { get; set; } = false;
@@ -62,5 +69,5 @@ public sealed class AgentOptions
     public string? EsxHost { get; set; }           // vCenter/ESXi hostname or IP
     public string? EsxUser { get; set; }
     public string? EsxPassword { get; set; }
-    public bool EsxIgnoreSslErrors { get; set; } = true; // most ESXi hosts use self-signed certs
+    public bool EsxIgnoreSslErrors { get; set; } = false;
 }

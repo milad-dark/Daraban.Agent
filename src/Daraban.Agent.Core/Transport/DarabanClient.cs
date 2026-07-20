@@ -1,6 +1,5 @@
 ﻿using Daraban.Agent.Core.Config;
 using Daraban.Agent.Core.Models;
-using Microsoft.Extensions.Logging;
 using System.IO.Compression;
 using System.Net.Http.Headers;
 using System.Text;
@@ -22,14 +21,16 @@ namespace Daraban.Agent.Core.Transport;
 public sealed class DarabanClient : IDarabanClient
 {
     private readonly HttpClient _http;
-    private readonly bool _useGzip;
+    //private readonly bool _useGzip;
     private readonly AgentOptions _options;
-    private readonly ILogger<DarabanClient> _logger;
+    //private readonly ILogger<DarabanClient> _logger;
+    private readonly OAuthTokenProvider _tokenProvider;
 
-    public DarabanClient(HttpClient http, bool useGzip = true)
+    public DarabanClient(HttpClient http, AgentOptions options)
     {
         _http = http;
-        _useGzip = useGzip;
+        _options = options;
+        _tokenProvider = new OAuthTokenProvider(http, options);
 
         if (_http.DefaultRequestHeaders.UserAgent.Count == 0)
             _http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Daraban-Agent", "1.0"));
@@ -39,8 +40,8 @@ public sealed class DarabanClient : IDarabanClient
     {
         try
         {
-            var url = $"/api/agent/prolog?deviceId={Uri.EscapeDataString(deviceId)}";
-            using var resp = await _http.GetAsync(url, ct).ConfigureAwait(false);
+            using var request = await CreateRequestAsync(HttpMethod.Get, $"api/agent/prolog?deviceId={Uri.EscapeDataString(deviceId)}", ct);
+            using var resp = await _http.SendAsync(request, ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
             {
                 Console.WriteLine($"[server] Prolog failed: HTTP {(int)resp.StatusCode}");
@@ -126,18 +127,17 @@ public sealed class DarabanClient : IDarabanClient
     /// <inheritdoc/>
     public async Task<List<CollectJob>> GetCollectJobsAsync(CancellationToken ct)
     {
-        var request = BuildRequest(
-            HttpMethod.Get,
-            "api/agent/collect/jobs");
+        using var request = await CreateRequestAsync(
+             HttpMethod.Get,
+             "api/agent/collect/jobs", ct);
 
         try
         {
-            var response = await _http.SendAsync(request, ct);
+            using var response = await _http.SendAsync(request, ct);
 
             // 204 No Content = server has no pending jobs for this agent
             if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
             {
-                _logger.LogDebug("[collect] Server returned 204 — no pending jobs");
                 return [];
             }
 
@@ -146,14 +146,11 @@ public sealed class DarabanClient : IDarabanClient
             var json = await response.Content.ReadAsStringAsync(ct);
             var jobs = JsonSerializer.Deserialize<List<CollectJob>>(json, JsonOpts);
 
-            _logger.LogInformation("[collect] Fetched {Count} job(s) from server",
-                jobs?.Count ?? 0);
-
             return jobs ?? [];
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogWarning(ex, "[collect] Failed to fetch collect jobs from server");
+            Console.Error.WriteLine($"[collect] Failed to fetch collect jobs from server: {ex.Message}");
             return [];     // graceful degradation — don't crash the task
         }
     }
@@ -164,10 +161,7 @@ public sealed class DarabanClient : IDarabanClient
     public async Task PostCollectResultsAsync(IList<CollectResult> results, CancellationToken ct)
     {
         if (results.Count == 0)
-        {
-            _logger.LogDebug("[collect] No results to post");
             return;
-        }
 
         var payload = new CollectResultsPayload
         {
@@ -176,9 +170,7 @@ public sealed class DarabanClient : IDarabanClient
             Results = results
         };
 
-        var request = BuildRequest(
-            HttpMethod.Post,
-            "api/agent/collect/results");
+        using var request = await CreateRequestAsync(HttpMethod.Post, "api/agent/collect/results", ct);
 
         request.Content = _options.UseGzip
             ? await BuildGzipContentAsync(payload, ct)
@@ -186,13 +178,12 @@ public sealed class DarabanClient : IDarabanClient
 
         try
         {
-            var response = await _http.SendAsync(request, ct);
+            using var response = await _http.SendAsync(request, ct);
             response.EnsureSuccessStatusCode();
-            _logger.LogInformation("[collect] Posted {Count} result(s) to server", results.Count);
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogError(ex, "[collect] Failed to post collect results");
+            Console.Error.WriteLine($"[collect] Failed to post collect results: {ex.Message}");
             throw;   // let AgentRunner record failure in AgentStatusTracker
         }
     }
@@ -216,7 +207,7 @@ public sealed class DarabanClient : IDarabanClient
     {
         HttpContent body;
 
-        if (_useGzip)
+        if (_options.UseGzip)
         {
             var buffer = new MemoryStream();
             await using (var gzip = new GZipStream(buffer, CompressionLevel.Fastest, leaveOpen: true))
@@ -234,7 +225,9 @@ public sealed class DarabanClient : IDarabanClient
             body = new StringContent(json, Encoding.UTF8, "application/json");
         }
 
-        using var resp = await _http.PostAsync(url, body, ct).ConfigureAwait(false);
+        using var request = await CreateRequestAsync(HttpMethod.Post, url, ct);
+        request.Content = body;
+        using var resp = await _http.SendAsync(request, ct).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
         {
             var text = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
@@ -250,6 +243,23 @@ public sealed class DarabanClient : IDarabanClient
         var request = new HttpRequestMessage(method,
             new Uri(_options.Server!.TrimEnd('/') + "/" + relativeUrl.TrimStart('/')));
 
+        if (!string.IsNullOrWhiteSpace(_options.ApiKey))
+            request.Headers.Add("X-Api-Key", _options.ApiKey);
+
+        return request;
+    }
+
+    /// <summary>
+    /// Builds an HttpRequestMessage with the base URL and optional API key header.
+    /// </summary>
+    private async Task<HttpRequestMessage> CreateRequestAsync(HttpMethod method, string relativeUrl, CancellationToken ct)
+    {
+        var request = new HttpRequestMessage(method, relativeUrl.TrimStart('/'));
+        var accessToken = await _tokenProvider.GetAccessTokenAsync(ct);
+        if (!string.IsNullOrWhiteSpace(accessToken))
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+        // Transitional only. The backend must reject this once OAuth enrollment is live.
         if (!string.IsNullOrWhiteSpace(_options.ApiKey))
             request.Headers.Add("X-Api-Key", _options.ApiKey);
 

@@ -1,4 +1,5 @@
 ﻿using Daraban.Agent.Core.Models;
+using Microsoft.Win32;
 using System.Management;
 using System.Runtime.Versioning;
 using System.Text.Json;
@@ -442,22 +443,44 @@ public class LocalWindowsCollector
     {
         try
         {
-            using var searcher = new ManagementObjectSearcher("SELECT Name, Version, IdentifyingNumber, Caption, Vendor FROM Win32_Product");
-            foreach (ManagementObject mo in searcher.Get())
+            foreach (var hive in new[] { Registry.LocalMachine, Registry.CurrentUser })
             {
-                var name = mo["Name"]?.ToString();
-                if (string.IsNullOrWhiteSpace(name))
+                using var uninstall = hive.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall");
+                if (uninstall is null)
                     continue;
-
-                content.Software.Add(new SoftwareInfo
+                foreach (var keyName in uninstall.GetSubKeyNames())
                 {
-                    Name = name,
-                    Version = mo["Version"]?.ToString(),
-                    IdentifyingNumber = mo["IdentifyingNumber"]?.ToString(),
-                    Caption = mo["Caption"]?.ToString(),
-                    Vendor = mo["Vendor"]?.ToString()
-                });
+                    using var key = uninstall.OpenSubKey(keyName);
+                    var name = key?.GetValue("DisplayName")?.ToString();
+                    if (string.IsNullOrWhiteSpace(name))
+                        continue;
+
+                    content.Software.Add(new SoftwareInfo
+                    {
+                        Name = name,
+                        Version = key?.GetValue("DisplayVersion")?.ToString(),
+                        IdentifyingNumber = keyName,
+                        Vendor = key?.GetValue("Publisher")?.ToString(),
+                    });
+                }
             }
+
+            //using var searcher = new ManagementObjectSearcher("SELECT Name, Version, IdentifyingNumber, Caption, Vendor FROM Win32_Product");
+            //foreach (ManagementObject mo in searcher.Get())
+            //{
+            //    var name = mo["Name"]?.ToString();
+            //    if (string.IsNullOrWhiteSpace(name))
+            //        continue;
+
+            //    content.Software.Add(new SoftwareInfo
+            //    {
+            //        Name = name,
+            //        Version = mo["Version"]?.ToString(),
+            //        IdentifyingNumber = mo["IdentifyingNumber"]?.ToString(),
+            //        Caption = mo["Caption"]?.ToString(),
+            //        Vendor = mo["Vendor"]?.ToString()
+            //    });
+            //}
         }
         catch (Exception ex)
         {

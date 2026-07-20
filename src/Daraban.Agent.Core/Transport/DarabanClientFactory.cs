@@ -9,11 +9,7 @@ public static class DarabanClientFactory
         if (string.IsNullOrWhiteSpace(options.Server))
             throw new InvalidOperationException("AgentOptions.Server must be set before creating a DarabanClient.");
 
-        var http = new HttpClient { BaseAddress = new Uri(options.Server) };
-
-        if (!string.IsNullOrWhiteSpace(options.ApiKey))
-            http.DefaultRequestHeaders.Add("X-Api-Key", options.ApiKey);
-
-        return new DarabanClient(http);
+        var http = new HttpClient { BaseAddress = new Uri(options.Server.TrimEnd('/') + "/"), Timeout = TimeSpan.FromSeconds(30) };
+        return new DarabanClient(http, options);
     }
 }

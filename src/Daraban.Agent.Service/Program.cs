@@ -21,7 +21,7 @@ builder.ConfigureServices((ctx, services) =>
     services.AddSingleton<IAgentTask, WakeOnLanTask>();
     services.AddSingleton<IAgentTask, DeployTask>();
     services.AddSingleton<IAgentTask, EsxInventoryTask>();
-    services.AddSingleton<CollectTask>();
+    services.AddSingleton<IAgentTask, CollectTask>();
 
     services.AddHttpClient<IDarabanClient, DarabanClient>((sp, client) =>
     {

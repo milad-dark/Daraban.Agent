@@ -36,7 +36,7 @@ public sealed class RemoteInventoryTask : IAgentTask
         }
         else if (!string.IsNullOrWhiteSpace(options.Server))
         {
-            var client = new DarabanClient(new HttpClient { BaseAddress = new Uri(options.Server) });
+            var client = DarabanClientFactory.Create(options);
             await client.PostInventoryAsync(json, ct); // same endpoint, different action tag
             Console.WriteLine("[remote] Remote inventory sent to server.");
         }
