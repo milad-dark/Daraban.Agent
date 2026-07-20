@@ -70,4 +70,13 @@ public sealed class AgentOptions
     public string? EsxUser { get; set; }
     public string? EsxPassword { get; set; }
     public bool EsxIgnoreSslErrors { get; set; } = false;
+
+    // ---- Remote (RemoteInventoryTask) -----------------------------------------
+    // Connection strings for machines this agent should inventory remotely, e.g.
+    //   ssh://root:mypassword@10.0.0.5
+    //   winrm://Administrator:mypassword@10.0.0.6:5985
+    // Mirrors glpi-agent's "remote" concept (`glpi-remote add/list`), simplified to a
+    // flat config list for now. TODO: move to a local file/DB once the fleet grows past
+    // what's comfortable in appsettings.json.
+    public List<string> RemoteHosts { get; set; } = new();
 }

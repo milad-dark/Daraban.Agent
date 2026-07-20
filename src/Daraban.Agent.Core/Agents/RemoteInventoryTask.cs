@@ -1,4 +1,6 @@
-﻿using Daraban.Agent.Core.Config;
+﻿using Daraban.Agent.Core.Collectors;
+using Daraban.Agent.Core.Config;
+using Daraban.Agent.Core.Models;
 using Daraban.Agent.Core.Transport;
 using System.Text.Json;
 
@@ -10,39 +12,79 @@ public sealed class RemoteInventoryTask : IAgentTask
 
     public async Task RunAsync(AgentOptions options, CancellationToken ct)
     {
-        // TODO: load remotes from a local file/DB (like glpi-remote add/list).
-        // For each remote:
-        //   if url.StartsWith("ssh://")  -> SSH.NET collector
-        //   if url.StartsWith("winrm://") -> WinRM collector
-        // Build inventory JSON per host, then post.
-
-        var stub = new
+        // Was previously a pure stub ("Not implemented yet") even though
+        // SshRemoteCollector and WinrmRemoteCollector are fully implemented and were
+        // reachable only from the CLI's --method ssh / --method winrm test paths.
+        // This now actually runs them against AgentOptions.RemoteHosts.
+        if (options.RemoteHosts.Count == 0)
         {
-            action = "remote",
-            deviceid = options.Tag ?? Environment.MachineName,
-            timestampUtc = DateTime.UtcNow,
-            message = "Not implemented yet. See TODO in RemoteInventoryTask."
-        };
-
-        var json = JsonSerializer.Serialize(stub);
-
-        if (!string.IsNullOrWhiteSpace(options.Local))
-        {
-            var dir = options.Local;
-            Directory.CreateDirectory(dir);
-            var file = Path.Combine(dir, $"remote-{DateTime.UtcNow:yyyyMMdd-HHmmss}.json");
-            await File.WriteAllTextAsync(file, json, ct);
-            Console.WriteLine($"[remote] Remote inventory written to {file}");
+            Console.WriteLine("[remote] No RemoteHosts configured; skipped. " +
+                "Add entries like \"ssh://user:password@10.0.0.5\" to AgentOptions.RemoteHosts.");
+            return;
         }
-        else if (!string.IsNullOrWhiteSpace(options.Server))
+
+        var client = !string.IsNullOrWhiteSpace(options.Server) ? DarabanClientFactory.Create(options) : null;
+
+        foreach (var entry in options.RemoteHosts)
         {
-            var client = DarabanClientFactory.Create(options);
-            await client.PostInventoryAsync(json, ct); // same endpoint, different action tag
-            Console.WriteLine("[remote] Remote inventory sent to server.");
-        }
-        else
-        {
-            Console.WriteLine("[remote] No server or local path configured; skipped.");
+            RemoteHostSpec spec;
+            try
+            {
+                spec = RemoteHostSpec.Parse(entry);
+            }
+            catch (FormatException ex)
+            {
+                Console.Error.WriteLine($"[remote] Skipping invalid entry: {ex.Message}");
+                continue;
+            }
+
+            DeviceInventory inventory;
+            try
+            {
+                inventory = await CollectOneAsync(spec, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[remote] Failed to collect {spec.Scheme}://{spec.Host}: {ex.Message}");
+                continue;
+            }
+
+            // Both collectors leave DeviceInventory.DeviceId at its default
+            // (Environment.MachineName — the *local* agent's own hostname), which would
+            // otherwise make the server attribute this remote host's data to the agent
+            // machine itself.
+            inventory.DeviceId = spec.Host;
+
+            var json = JsonSerializer.Serialize(inventory);
+
+            if (client is not null)
+            {
+                await client.PostInventoryAsync(json, ct);
+                Console.WriteLine($"[remote] {spec.Host} inventory sent to server.");
+            }
+            else if (!string.IsNullOrWhiteSpace(options.Local))
+            {
+                Directory.CreateDirectory(options.Local);
+                var file = Path.Combine(options.Local, $"remote-{spec.Host}-{DateTime.UtcNow:yyyyMMdd-HHmmss}.json");
+                await File.WriteAllTextAsync(file, json, ct);
+                Console.WriteLine($"[remote] {spec.Host} inventory written to {file}");
+            }
+            else
+            {
+                Console.WriteLine("[remote] No server or local path configured; skipped.");
+            }
         }
     }
+
+    private static Task<DeviceInventory> CollectOneAsync(RemoteHostSpec spec, CancellationToken ct)
+        => spec.Scheme switch
+        {
+            "ssh" => new SshRemoteCollector().CollectAsync(spec.Host, spec.Username, spec.Password, ct),
+            "winrm" => new WinrmRemoteCollector(spec.Host, spec.Username, spec.Password, https: spec.WinrmHttps).CollectAsync(ct),
+            _ => throw new FormatException($"Unsupported remote scheme '{spec.Scheme}'.")
+        };
 }
