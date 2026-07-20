@@ -28,7 +28,6 @@ public sealed class LocalInventoryTask : IAgentTask
         {
             var client = DarabanClientFactory.Create(options);
             await client.PostInventoryAsync(inventory.DeviceId, inventory.Content, ct: ct);
-            await client.PostInventoryAsync(json, ct);
             Console.WriteLine("[local] Inventory sent to server.");
         }
         else
