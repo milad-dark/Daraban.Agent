@@ -48,6 +48,20 @@ public sealed class AgentOptions
     // Sent as X-Api-Key header on every request once the server has auth enabled.
     public string? ApiKey { get; set; }
 
+    /// <summary>
+    /// SSL client certificate source, mirroring glpi-agent's `ssl-keystore`. On Windows,
+    /// comma-separated store names to search for a client certificate (e.g. "My", "CA",
+    /// "Root", "User-My"). On macOS the user keychain is used. Null disables the feature.
+    /// </summary>
+    public string? SslKeystore { get; set; }
+
+    /// <summary>
+    /// SHA-256 fingerprint of the server TLS certificate to trust (hex, colon-separated,
+    /// e.g. "AA:BB:..."). When set, only a server presenting this certificate is accepted.
+    /// Mirrors glpi-agent's `ssl-fingerprint`.
+    /// </summary>
+    public string? SslFingerprint { get; set; }
+
     // OAuth2 client-credentials configuration. ClientSecret must be supplied by a secret
     // provider/environment variable in production, never committed to appsettings.json.
     public string? OAuthTokenEndpoint { get; set; }
