@@ -18,6 +18,7 @@ class Program
         var localOpt = new Option<string?>("--local") { Description = "Write results to this local directory instead of sending to a server" };
         var tagOpt = new Option<string?>("--tag") { Description = "Device id reported to the server (defaults to the machine name)" };
         var apiKeyOpt = new Option<string?>("--api-key") { Description = "Sent as the X-Api-Key header on every request, once server-side auth is enabled" };
+        var proxyOpt = new Option<string?>("--proxy") { Description = "HTTP proxy for server communication: URL (http://host:port), 'none' to disable env-var proxy, default inherits HTTP_PROXY" };
 
         // ---- Task selection -------------------------------------------------------------
         var tasksOpt = new Option<string?>("--tasks")
@@ -63,7 +64,7 @@ class Program
 
         var rootCommand = new RootCommand("Daraban Agent CLI")
         {
-            serverOpt, localOpt, tagOpt, apiKeyOpt,
+serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt,
             tasksOpt, noTaskOpt,
             delayOpt, lazyOpt, onceOpt,
             httpPortOpt, httpTrustOpt, noHttpdOpt,
@@ -81,7 +82,7 @@ class Program
             if (!string.IsNullOrWhiteSpace(method))
                 return await RunOneOffCollectorAsync(method, pr.GetValue(hostOpt)!, pr.GetValue(userOpt)!, pr.GetValue(passOpt)!, pr.GetValue(fileOpt)!, ct);
 
-            var options = BuildOptions(pr, serverOpt, localOpt, tagOpt, apiKeyOpt, tasksOpt, noTaskOpt,
+            var options = BuildOptions(pr, serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, tasksOpt, noTaskOpt,
                 delayOpt, lazyOpt, onceOpt, httpPortOpt, httpTrustOpt, noHttpdOpt,
                 ipRangeOpt, communityOpt, snmpTimeoutOpt, threadsOpt,
                 wolMacOpt, wolBroadcastOpt, deployWorkDirOpt, esxHostOpt, esxUserOpt, esxPasswordOpt, agentIdOption, gzipOption);
@@ -207,7 +208,7 @@ class Program
     }
 
     static AgentOptions BuildOptions(ParseResult pr,
-        Option<string?> serverOpt, Option<string?> localOpt, Option<string?> tagOpt, Option<string?> apiKeyOpt,
+        Option<string?> serverOpt, Option<string?> localOpt, Option<string?> tagOpt, Option<string?> apiKeyOpt, Option<string?> proxyOpt,
         Option<string?> tasksOpt, Option<string?> noTaskOpt,
         Option<int> delayOpt, Option<bool> lazyOpt, Option<bool> onceOpt,
         Option<int> httpPortOpt, Option<string?> httpTrustOpt, Option<bool> noHttpdOpt,
@@ -220,6 +221,7 @@ class Program
             Local = pr.GetValue(localOpt),
             Tag = pr.GetValue(tagOpt),
             ApiKey = pr.GetValue(apiKeyOpt),
+            Proxy = pr.GetValue(proxyOpt),
             DelayTimeSeconds = pr.GetValue(delayOpt),
             Lazy = pr.GetValue(lazyOpt),
             RunOnce = pr.GetValue(onceOpt),

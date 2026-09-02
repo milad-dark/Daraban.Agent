@@ -59,6 +59,14 @@ public sealed class AgentOptions
     public bool RunOnce { get; set; } = false;
 
     /// <summary>
+    /// HTTP proxy URL used for server communication. Mirrors glpi-agent's `proxy` option:
+    ///   null  → inherit from HTTP_PROXY/HTTPS_PROXY environment variables (HttpClient default)
+    ///   "none" → disable proxy entirely, ignoring environment variables
+    ///   "http://host:port" → use the given proxy explicitly
+    /// </summary>
+    public string? Proxy { get; set; }
+
+    /// <summary>
     /// Unique identifier for this agent instance.
     /// Sent with every POST so the server can correlate data to a machine
     /// without relying on IP address (which can change).
