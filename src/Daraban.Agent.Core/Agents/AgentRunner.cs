@@ -33,20 +33,22 @@ public sealed class AgentRunner(IEnumerable<IAgentTask> tasks, AgentStatusTracke
     {
         var deviceId = options.Tag ?? Environment.MachineName;
 
-        if (!string.IsNullOrWhiteSpace(options.Server))
+        if (options.Servers.Count > 0)
         {
-            try
+            foreach (var client in DarabanClientFactory.CreateAll(options))
             {
-                var client = DarabanClientFactory.Create(options);
-                var config = await client.PrologAsync(deviceId, ct);
-                if (!string.IsNullOrWhiteSpace(config))
-                    Console.WriteLine($"[agent] Prolog config from server: {config}");
-            }
-            catch (Exception ex)
-            {
-                // A failed prolog shouldn't block the run — glpi-agent falls back to its
-                // local schedule too when the server is briefly unreachable.
-                Console.WriteLine($"[agent] Prolog handshake failed (continuing with local config): {ex.Message}");
+                try
+                {
+                    var config = await client.PrologAsync(deviceId, ct);
+                    if (!string.IsNullOrWhiteSpace(config))
+                        Console.WriteLine($"[agent] Prolog config from {client.ServerUrl}: {config}");
+                }
+                catch (Exception ex)
+                {
+                    // A failed prolog shouldn't block the run — glpi-agent falls back to its
+                    // local schedule too when the server is briefly unreachable.
+                    Console.WriteLine($"[agent] Prolog handshake failed for {client.ServerUrl} (continuing with local config): {ex.Message}");
+                }
             }
         }
 

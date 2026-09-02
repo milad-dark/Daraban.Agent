@@ -26,6 +26,9 @@ public sealed class DarabanClient : IDarabanClient
     //private readonly ILogger<DarabanClient> _logger;
     private readonly OAuthTokenProvider _tokenProvider;
 
+    /// <summary>Base server URL this client posts to (used in multi-target logs).</summary>
+    public string ServerUrl => _http.BaseAddress?.ToString().TrimEnd('/') ?? string.Empty;
+
     public DarabanClient(HttpClient http, AgentOptions options)
     {
         _http = http;

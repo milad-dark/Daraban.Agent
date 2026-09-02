@@ -23,7 +23,7 @@ public sealed class RemoteInventoryTask : IAgentTask
             return;
         }
 
-        var client = !string.IsNullOrWhiteSpace(options.Server) ? DarabanClientFactory.Create(options) : null;
+        var clients = options.Servers.Count > 0 ? DarabanClientFactory.CreateAll(options) : null;
 
         foreach (var entry in options.RemoteHosts)
         {
@@ -61,10 +61,20 @@ public sealed class RemoteInventoryTask : IAgentTask
 
             var json = JsonSerializer.Serialize(inventory);
 
-            if (client is not null)
+            if (clients is not null)
             {
-                await client.PostInventoryAsync(json, ct);
-                Console.WriteLine($"[remote] {spec.Host} inventory sent to server.");
+                foreach (var client in clients)
+                {
+                    try
+                    {
+                        await client.PostInventoryAsync(json, ct);
+                        Console.WriteLine($"[remote] {spec.Host} inventory sent to {client.ServerUrl}.");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"[remote] Failed to send {spec.Host} inventory to {client.ServerUrl}: {ex.Message}");
+                    }
+                }
             }
             else if (!string.IsNullOrWhiteSpace(options.Local))
             {

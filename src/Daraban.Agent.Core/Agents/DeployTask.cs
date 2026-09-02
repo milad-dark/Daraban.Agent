@@ -24,28 +24,31 @@ public sealed class DeployTask : IAgentTask
 
     public async Task RunAsync(AgentOptions options, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(options.Server))
+        if (options.Servers.Count == 0)
         {
             Console.WriteLine("[deploy] Deploy requires --server (jobs and results are exchanged with GLPI); skipped.");
             return;
         }
 
         var deviceId = options.Tag ?? Environment.MachineName;
-        var client = DarabanClientFactory.Create(options);
+        var clients = DarabanClientFactory.CreateAll(options);
 
-        var jobs = await client.GetPendingDeployJobsAsync(deviceId, ct);
-        if (jobs.Count == 0)
+        foreach (var client in clients)
         {
-            Console.WriteLine("[deploy] No pending jobs.");
-            return;
-        }
+            var jobs = await client.GetPendingDeployJobsAsync(deviceId, ct);
+            if (jobs.Count == 0)
+            {
+                Console.WriteLine($"[deploy] No pending jobs from {client.ServerUrl}.");
+                continue;
+            }
 
-        foreach (var job in jobs)
-        {
-            ct.ThrowIfCancellationRequested();
-            var result = await RunJobAsync(job, options, ct);
-            await client.PostDeployResultAsync(deviceId, result, ct);
-            Console.WriteLine($"[deploy] Job '{job.Name}' ({job.JobId}) => {result.Status}: {result.Message}");
+            foreach (var job in jobs)
+            {
+                ct.ThrowIfCancellationRequested();
+                var result = await RunJobAsync(job, options, ct);
+                await client.PostDeployResultAsync(deviceId, result, ct);
+                Console.WriteLine($"[deploy] Job '{job.Name}' ({job.JobId}) => {result.Status}: {result.Message}");
+            }
         }
     }
 

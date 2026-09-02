@@ -50,10 +50,12 @@ public sealed class CollectTask : IAgentTask
         });
 
         // 3. Post results or write local
-        var client = DarabanClientFactory.Create(options);
-        if (client is not null)
+        if (options.Servers.Count > 0)
         {
-            await client.PostCollectResultsAsync(results.ToList(), ct);
+            await MultiTargetDelivery.ForEachServerAsync(options, async client =>
+            {
+                await client.PostCollectResultsAsync(results.ToList(), ct);
+            }, ct);
         }
         else
         {
@@ -84,12 +86,19 @@ public sealed class CollectTask : IAgentTask
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
             }
 
-            // Server mode — fetch from server
-            var client = DarabanClientFactory.Create(options);
-            if (client is null)
+            // Server mode — fetch from all configured servers
+            var clients = DarabanClientFactory.CreateAll(options);
+            if (clients.Count == 0)
                 return [];
 
-            return await client.GetCollectJobsAsync(ct);
+            var allJobs = new List<CollectJob>();
+            foreach (var client in clients)
+            {
+                var jobs = await client.GetCollectJobsAsync(ct);
+                allJobs.AddRange(jobs);
+            }
+
+            return allJobs;
         }
         catch (Exception ex)
         {

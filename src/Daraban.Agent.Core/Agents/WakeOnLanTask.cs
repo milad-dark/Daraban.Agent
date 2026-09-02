@@ -57,11 +57,13 @@ public sealed class WakeOnLanTask : IAgentTask
             await File.WriteAllTextAsync(file, JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }), ct);
             Console.WriteLine($"[wakeonlan] Results written to {file}");
         }
-        else if (!string.IsNullOrWhiteSpace(options.Server))
+        else if (options.Servers.Count > 0)
         {
-            var client = DarabanClientFactory.Create(options);
-            await client.PostWakeOnLanResultAsync(options.Tag ?? Environment.MachineName, results, ct);
-            Console.WriteLine("[wakeonlan] Results sent to server.");
+            await MultiTargetDelivery.ForEachServerAsync(options, async client =>
+            {
+                await client.PostWakeOnLanResultAsync(options.Tag ?? Environment.MachineName, results, ct);
+            }, ct);
+            Console.WriteLine("[wakeonlan] Results sent to server(s).");
         }
     }
 }

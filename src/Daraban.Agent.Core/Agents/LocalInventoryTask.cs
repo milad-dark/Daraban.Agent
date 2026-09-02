@@ -24,11 +24,13 @@ public sealed class LocalInventoryTask : IAgentTask
             await File.WriteAllTextAsync(file, json, ct);
             Console.WriteLine($"[local] Inventory written to {file}");
         }
-        else if (!string.IsNullOrWhiteSpace(options.Server))
+        else if (options.Servers.Count > 0)
         {
-            var client = DarabanClientFactory.Create(options);
-            await client.PostInventoryAsync(inventory.DeviceId, inventory.Content, ct: ct);
-            Console.WriteLine("[local] Inventory sent to server.");
+            await MultiTargetDelivery.ForEachServerAsync(options, async client =>
+            {
+                await client.PostInventoryAsync(inventory.DeviceId, inventory.Content, ct: ct);
+            }, ct);
+            Console.WriteLine("[local] Inventory sent to server(s).");
         }
         else
         {

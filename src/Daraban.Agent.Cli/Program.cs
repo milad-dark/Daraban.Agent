@@ -218,7 +218,6 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt,
     {
         var options = new AgentOptions
         {
-            Server = pr.GetValue(serverOpt),
             Local = pr.GetValue(localOpt),
             Tag = pr.GetValue(tagOpt),
             ApiKey = pr.GetValue(apiKeyOpt),
@@ -244,6 +243,10 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt,
         var tasksRaw = pr.GetValue(tasksOpt);
         if (!string.IsNullOrWhiteSpace(tasksRaw))
             options.Tasks.AddRange(tasksRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+        var serverRaw = pr.GetValue(serverOpt);
+        if (!string.IsNullOrWhiteSpace(serverRaw))
+            options.Servers.AddRange(serverRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
         var noTaskRaw = pr.GetValue(noTaskOpt);
         if (!string.IsNullOrWhiteSpace(noTaskRaw))
