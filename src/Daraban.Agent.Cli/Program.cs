@@ -19,6 +19,8 @@ class Program
         var tagOpt = new Option<string?>("--tag") { Description = "Device id reported to the server (defaults to the machine name)" };
         var apiKeyOpt = new Option<string?>("--api-key") { Description = "Sent as the X-Api-Key header on every request, once server-side auth is enabled" };
         var proxyOpt = new Option<string?>("--proxy") { Description = "HTTP proxy for server communication: URL (http://host:port), 'none' to disable env-var proxy, default inherits HTTP_PROXY" };
+        var sslKeystoreOpt = new Option<string?>("--ssl-keystore") { Description = "SSL client certificate source (Windows stores e.g. 'My,CA', or macOS keychain), mirrors glpi-agent ssl-keystore" };
+        var sslFingerprintOpt = new Option<string?>("--ssl-fingerprint") { Description = "SHA-256 fingerprint (hex, colon-separated) of the server TLS cert to trust, mirrors glpi-agent ssl-fingerprint" };
 
         // ---- Task selection -------------------------------------------------------------
         var tasksOpt = new Option<string?>("--tasks")
@@ -64,7 +66,7 @@ class Program
 
         var rootCommand = new RootCommand("Daraban Agent CLI")
         {
-serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt,
+serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprintOpt,
             tasksOpt, noTaskOpt,
             delayOpt, lazyOpt, onceOpt,
             httpPortOpt, httpTrustOpt, noHttpdOpt,
@@ -82,7 +84,7 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt,
             if (!string.IsNullOrWhiteSpace(method))
                 return await RunOneOffCollectorAsync(method, pr.GetValue(hostOpt)!, pr.GetValue(userOpt)!, pr.GetValue(passOpt)!, pr.GetValue(fileOpt)!, ct);
 
-            var options = BuildOptions(pr, serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, tasksOpt, noTaskOpt,
+            var options = BuildOptions(pr, serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprintOpt, tasksOpt, noTaskOpt,
                 delayOpt, lazyOpt, onceOpt, httpPortOpt, httpTrustOpt, noHttpdOpt,
                 ipRangeOpt, communityOpt, snmpTimeoutOpt, threadsOpt,
                 wolMacOpt, wolBroadcastOpt, deployWorkDirOpt, esxHostOpt, esxUserOpt, esxPasswordOpt, agentIdOption, gzipOption);
@@ -208,7 +210,7 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt,
     }
 
     static AgentOptions BuildOptions(ParseResult pr,
-        Option<string?> serverOpt, Option<string?> localOpt, Option<string?> tagOpt, Option<string?> apiKeyOpt, Option<string?> proxyOpt,
+        Option<string?> serverOpt, Option<string?> localOpt, Option<string?> tagOpt, Option<string?> apiKeyOpt, Option<string?> proxyOpt, Option<string?> sslKeystoreOpt, Option<string?> sslFingerprintOpt,
         Option<string?> tasksOpt, Option<string?> noTaskOpt,
         Option<int> delayOpt, Option<bool> lazyOpt, Option<bool> onceOpt,
         Option<int> httpPortOpt, Option<string?> httpTrustOpt, Option<bool> noHttpdOpt,
@@ -222,6 +224,8 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt,
             Tag = pr.GetValue(tagOpt),
             ApiKey = pr.GetValue(apiKeyOpt),
             Proxy = pr.GetValue(proxyOpt),
+            SslKeystore = pr.GetValue(sslKeystoreOpt),
+            SslFingerprint = pr.GetValue(sslFingerprintOpt),
             DelayTimeSeconds = pr.GetValue(delayOpt),
             Lazy = pr.GetValue(lazyOpt),
             RunOnce = pr.GetValue(onceOpt),
