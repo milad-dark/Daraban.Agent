@@ -349,11 +349,13 @@ public sealed class NetDiscoveryTask : IAgentTask
                     new JsonSerializerOptions { WriteIndented = true }), ct);
             Console.WriteLine($"[netdiscovery] Results written to {file}");
         }
-        else if (!string.IsNullOrWhiteSpace(options.Server))
+        else if (options.Servers.Count > 0)
         {
-            var client = DarabanClientFactory.Create(options);
-            await client.PostDiscoveryAsync(options.Tag ?? Environment.MachineName, hosts, ct);
-            Console.WriteLine("[netdiscovery] Results sent to server.");
+            await MultiTargetDelivery.ForEachServerAsync(options, async client =>
+            {
+                await client.PostDiscoveryAsync(options.Tag ?? Environment.MachineName, hosts, ct);
+            }, ct);
+            Console.WriteLine("[netdiscovery] Results sent to server(s).");
         }
         else
         {

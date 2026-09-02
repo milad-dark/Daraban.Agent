@@ -3,7 +3,30 @@
 public sealed class AgentOptions
 {
     // Target definition (like GLPI --server/--local)
-    public string? Server { get; set; }   // send results to GLPI server (HTTP/HTTPS)
+    // Multiple execution targets are supported (mirrors glpi-agent's comma-separated `server`).
+    public List<string> Servers { get; set; } = new();
+
+    /// <summary>
+    /// Convenience accessor for the primary (first) server. Backwards-compatible with
+    /// code that reads `options.Server`. Setting it replaces the server list.
+    /// </summary>
+    public string? Server
+    {
+        get => Servers.Count > 0 ? Servers[0] : null;
+        set
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                Servers.Clear();
+            }
+            else
+            {
+                Servers.Clear();
+                Servers.Add(value);
+            }
+        }
+    }
+
     public string? Local { get; set; }    // write results locally to this directory
 
     // Scheduling (mirrors --delaytime and --lazy)

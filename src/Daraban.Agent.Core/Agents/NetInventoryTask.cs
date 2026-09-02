@@ -81,11 +81,13 @@ public sealed class NetInventoryTask : IAgentTask
             await File.WriteAllTextAsync(file, JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }), ct);
             Console.WriteLine($"[netinventory] Results written to {file}");
         }
-        else if (!string.IsNullOrWhiteSpace(options.Server))
+        else if (options.Servers.Count > 0)
         {
-            var client = DarabanClientFactory.Create(options);
-            await client.PostNetInventoryAsync(options.Tag ?? Environment.MachineName, results, ct);
-            Console.WriteLine("[netinventory] Results sent to server.");
+            await MultiTargetDelivery.ForEachServerAsync(options, async client =>
+            {
+                await client.PostNetInventoryAsync(options.Tag ?? Environment.MachineName, results, ct);
+            }, ct);
+            Console.WriteLine("[netinventory] Results sent to server(s).");
         }
         else
         {

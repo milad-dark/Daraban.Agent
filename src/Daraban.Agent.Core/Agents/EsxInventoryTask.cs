@@ -53,13 +53,15 @@ public sealed class EsxInventoryTask : IAgentTask
             await File.WriteAllTextAsync(file, JsonSerializer.Serialize(hosts, new JsonSerializerOptions { WriteIndented = true }), ct);
             Console.WriteLine($"[esx] Results written to {file}");
         }
-        else if (!string.IsNullOrWhiteSpace(options.Server))
+        else if (options.Servers.Count > 0)
         {
-            var client = DarabanClientFactory.Create(options);
             var deviceId = options.Tag ?? options.EsxHost ?? Environment.MachineName;
-            foreach (var host in hosts)
-                await client.PostEsxInventoryAsync(deviceId, host, ct);
-            Console.WriteLine("[esx] Results sent to server.");
+            await MultiTargetDelivery.ForEachServerAsync(options, async client =>
+            {
+                foreach (var host in hosts)
+                    await client.PostEsxInventoryAsync(deviceId, host, ct);
+            }, ct);
+            Console.WriteLine("[esx] Results sent to server(s).");
         }
         else
         {
