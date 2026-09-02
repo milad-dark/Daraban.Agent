@@ -27,7 +27,7 @@ public sealed class NetInventoryTask : IAgentTask
         var addresses = NetDiscoveryTask.ExpandCidr(options.IpRange).Select(a => a.ToString()).ToList();
         Console.WriteLine($"[netinventory] Querying {addresses.Count} address(es) over SNMP (community='{options.SnmpCommunity}') ...");
 
-        var collector = new SnmpNetworkCollector();
+        var collector = new SnmpNetworkCollector(new SnmpSession(SnmpCredentials.FromAgentOptions(options)));
         var results = new List<NetworkDeviceInventory>();
         using var throttle = new SemaphoreSlim(Math.Max(1, options.DiscoveryThreads));
 

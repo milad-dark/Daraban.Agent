@@ -103,6 +103,17 @@ public sealed class AgentOptions
     public int SnmpTimeoutMs { get; set; } = 2000;
     public int DiscoveryThreads { get; set; } = 32;
 
+    // ---- SNMP version / v3 USM (netdiscovery / netinventory) ----------------
+    /// <summary>SNMP version: "v1", "v2c" (default) or "v3".</summary>
+    public string SnmpVersion { get; set; } = "v2c";
+    public string? SnmpV3User { get; set; }
+    public string? SnmpV3AuthPass { get; set; }
+    /// <summary>Authentication protocol for SNMPv3: "MD5", "SHA" or "SHA256".</summary>
+    public string SnmpV3AuthProtocol { get; set; } = "MD5";
+    public string? SnmpV3PrivPass { get; set; }
+    /// <summary>Privacy (encryption) protocol for SNMPv3: "DES" or "AES".</summary>
+    public string SnmpV3PrivProtocol { get; set; } = "AES";
+
     // ---- WakeOnLan -----------------------------------------------------------
     public List<string> WakeOnLanMacs { get; set; } = new();   // "AA:BB:CC:DD:EE:FF"
     public string? WakeOnLanBroadcast { get; set; }             // defaults to 255.255.255.255

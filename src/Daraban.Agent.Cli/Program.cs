@@ -42,6 +42,12 @@ class Program
         var communityOpt = new Option<string>("--snmp-community") { Description = "SNMP community string", DefaultValueFactory = _ => "public" };
         var snmpTimeoutOpt = new Option<int>("--snmp-timeout") { Description = "SNMP timeout in ms", DefaultValueFactory = _ => 2000 };
         var threadsOpt = new Option<int>("--discovery-threads") { Description = "Parallel probes for netdiscovery/netinventory", DefaultValueFactory = _ => 32 };
+        var snmpVersionOpt = new Option<string>("--snmp-version") { Description = "SNMP version: v1, v2c (default) or v3", DefaultValueFactory = _ => "v2c" };
+        var snmpV3UserOpt = new Option<string?>("--snmp-v3-user") { Description = "SNMPv3 USM username" };
+        var snmpV3AuthPassOpt = new Option<string?>("--snmp-v3-auth-pass") { Description = "SNMPv3 authentication password" };
+        var snmpV3AuthProtoOpt = new Option<string>("--snmp-v3-auth-protocol") { Description = "SNMPv3 auth protocol: MD5, SHA or SHA256", DefaultValueFactory = _ => "MD5" };
+        var snmpV3PrivPassOpt = new Option<string?>("--snmp-v3-priv-pass") { Description = "SNMPv3 privacy (encryption) password" };
+        var snmpV3PrivProtoOpt = new Option<string>("--snmp-v3-priv-protocol") { Description = "SNMPv3 privacy protocol: DES or AES", DefaultValueFactory = _ => "AES" };
 
         // ---- WakeOnLan --------------------------------------------------------------------------
         var wolMacOpt = new Option<string?>("--wol-mac") { Description = "Comma-separated MAC addresses to wake" };
@@ -71,6 +77,7 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
             delayOpt, lazyOpt, onceOpt,
             httpPortOpt, httpTrustOpt, noHttpdOpt,
             ipRangeOpt, communityOpt, snmpTimeoutOpt, threadsOpt,
+            snmpVersionOpt, snmpV3UserOpt, snmpV3AuthPassOpt, snmpV3AuthProtoOpt, snmpV3PrivPassOpt, snmpV3PrivProtoOpt,
             wolMacOpt, wolBroadcastOpt,
             deployWorkDirOpt,
             esxHostOpt, esxUserOpt, esxPasswordOpt,
@@ -86,7 +93,7 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
 
             var options = BuildOptions(pr, serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprintOpt, tasksOpt, noTaskOpt,
                 delayOpt, lazyOpt, onceOpt, httpPortOpt, httpTrustOpt, noHttpdOpt,
-                ipRangeOpt, communityOpt, snmpTimeoutOpt, threadsOpt,
+                ipRangeOpt, communityOpt, snmpTimeoutOpt, threadsOpt, snmpVersionOpt, snmpV3UserOpt, snmpV3AuthPassOpt, snmpV3AuthProtoOpt, snmpV3PrivPassOpt, snmpV3PrivProtoOpt,
                 wolMacOpt, wolBroadcastOpt, deployWorkDirOpt, esxHostOpt, esxUserOpt, esxPasswordOpt, agentIdOption, gzipOption);
 
             return await RunAgentAsync(options, ct);
@@ -215,6 +222,7 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
         Option<int> delayOpt, Option<bool> lazyOpt, Option<bool> onceOpt,
         Option<int> httpPortOpt, Option<string?> httpTrustOpt, Option<bool> noHttpdOpt,
         Option<string?> ipRangeOpt, Option<string> communityOpt, Option<int> snmpTimeoutOpt, Option<int> threadsOpt,
+        Option<string> snmpVersionOpt, Option<string?> snmpV3UserOpt, Option<string?> snmpV3AuthPassOpt, Option<string> snmpV3AuthProtoOpt, Option<string?> snmpV3PrivPassOpt, Option<string> snmpV3PrivProtoOpt,
         Option<string?> wolMacOpt, Option<string?> wolBroadcastOpt, Option<string?> deployWorkDirOpt,
         Option<string?> esxHostOpt, Option<string?> esxUserOpt, Option<string?> esxPasswordOpt, Option<string> agentId, Option<bool> gzipOption)
     {
@@ -236,6 +244,12 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
             SnmpCommunity = pr.GetValue(communityOpt) ?? "public",
             SnmpTimeoutMs = pr.GetValue(snmpTimeoutOpt),
             DiscoveryThreads = pr.GetValue(threadsOpt),
+            SnmpVersion = pr.GetValue(snmpVersionOpt) ?? "v2c",
+            SnmpV3User = pr.GetValue(snmpV3UserOpt),
+            SnmpV3AuthPass = pr.GetValue(snmpV3AuthPassOpt),
+            SnmpV3AuthProtocol = pr.GetValue(snmpV3AuthProtoOpt) ?? "MD5",
+            SnmpV3PrivPass = pr.GetValue(snmpV3PrivPassOpt),
+            SnmpV3PrivProtocol = pr.GetValue(snmpV3PrivProtoOpt) ?? "AES",
             WakeOnLanBroadcast = pr.GetValue(wolBroadcastOpt),
             DeployWorkDir = pr.GetValue(deployWorkDirOpt),
             EsxHost = pr.GetValue(esxHostOpt),

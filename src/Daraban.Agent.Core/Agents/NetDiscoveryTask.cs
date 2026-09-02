@@ -84,6 +84,8 @@ public sealed class NetDiscoveryTask : IAgentTask
         {
             Console.WriteLine($"[netdiscovery] Running SNMP fingerprint on {candidates.Count} known host(s) ...");
 
+            using var snmpSession = new SnmpSession(SnmpCredentials.FromAgentOptions(options));
+
             using var snmpThrottle = new SemaphoreSlim(Math.Max(1, options.DiscoveryThreads));
 
             var snmpTasks = candidates.Select(async host =>
@@ -92,7 +94,7 @@ public sealed class NetDiscoveryTask : IAgentTask
                 try
                 {
                     var fingerprint = await SnmpNetworkCollector.ProbeForDiscoveryAsync(
-                        host.IpAddress, options.SnmpCommunity, options.SnmpTimeoutMs);
+                        host.IpAddress, snmpSession, options.SnmpTimeoutMs);
 
                     if (fingerprint is null) return;
 

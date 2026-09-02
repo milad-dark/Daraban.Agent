@@ -1,6 +1,5 @@
 ﻿using Daraban.Agent.Core.Models;
 using Lextm.SharpSnmpLib;
-using Lextm.SharpSnmpLib.Messaging;
 using System.Net;
 using System.Text.Json;
 
@@ -8,7 +7,7 @@ namespace Daraban.Agent.Core.Collectors;
 
 public class SnmpNetworkCollector
 {
-    // ── all your existing fields and methods stay exactly as they are ─────────
+    // ── OIDs ───────────────────────────────────────────────────────────────────
     private static readonly string OidSysDescr = "1.3.6.1.2.1.1.1.0";
     private static readonly string OidSysObjectID = "1.3.6.1.2.1.1.2.0";
     private static readonly string OidSysName = "1.3.6.1.2.1.1.5.0";
@@ -23,6 +22,19 @@ public class SnmpNetworkCollector
     private static readonly string OidHrStorageUsed = "1.3.6.1.2.1.25.2.3.1.6";
     private static readonly string OidHrStorageType = "1.3.6.1.2.1.25.2.3.1.2";
 
+    private readonly SnmpSession? _session;
+
+    /// <summary>Creates a collector using the default v1/v2c "public" credentials.</summary>
+    public SnmpNetworkCollector()
+    {
+    }
+
+    /// <summary>Creates a collector bound to a pre-built session (enables SNMPv3 USM).</summary>
+    public SnmpNetworkCollector(SnmpSession session)
+    {
+        _session = session;
+    }
+
     public async Task<DeviceInventory> DiscoverAsync(string ipAddress, string community = "public", int timeoutMs = 2000, CancellationToken ct = default)
     {
         var endpoint = new IPEndPoint(IPAddress.Parse(ipAddress), 161);
@@ -30,8 +42,8 @@ public class SnmpNetworkCollector
 
         try
         {
-            var sysDescr = await GetAsync(endpoint, community, OidSysDescr, timeoutMs);
-            var sysName = await GetAsync(endpoint, community, OidSysName, timeoutMs);
+            var sysDescr = await SessionGetAsync(endpoint, community, timeoutMs, OidSysDescr, ct);
+            var sysName = await SessionGetAsync(endpoint, community, timeoutMs, OidSysName, ct);
 
             content.OperatingSystem = sysDescr ?? "Unknown";
             content.ComputerName = sysName ?? ipAddress;
@@ -51,8 +63,8 @@ public class SnmpNetworkCollector
     {
         try
         {
-            var ifDescriptions = await WalkAsync(endpoint, community, OidIfDescr, timeoutMs, ct);
-            var ifPhysAddresses = await WalkAsync(endpoint, community, OidIfPhysAddress, timeoutMs, ct);
+            var ifDescriptions = await SessionWalkAsync(endpoint, community, OidIfDescr, timeoutMs, ct);
+            var ifPhysAddresses = await SessionWalkAsync(endpoint, community, OidIfPhysAddress, timeoutMs, ct);
 
             for (int i = 0; i < ifDescriptions.Count; i++)
             {
@@ -88,9 +100,9 @@ public class SnmpNetworkCollector
     {
         try
         {
-            var storageDescriptions = await WalkAsync(endpoint, community, OidHrStorageDescr, timeoutMs, ct);
-            var storageSizes = await WalkAsync(endpoint, community, OidHrStorageSize, timeoutMs, ct);
-            var storageTypes = await WalkAsync(endpoint, community, OidHrStorageType, timeoutMs, ct);
+            var storageDescriptions = await SessionWalkAsync(endpoint, community, OidHrStorageDescr, timeoutMs, ct);
+            var storageSizes = await SessionWalkAsync(endpoint, community, OidHrStorageSize, timeoutMs, ct);
+            var storageTypes = await SessionWalkAsync(endpoint, community, OidHrStorageType, timeoutMs, ct);
 
             for (int i = 0; i < storageDescriptions.Count && i < storageSizes.Count; i++)
             {
@@ -119,72 +131,46 @@ public class SnmpNetworkCollector
         }
     }
 
-    private static async Task<string?> GetAsync(IPEndPoint endpoint, string community, string oid, int timeoutMs)
+    // ── Session-aware GET/WALK (v1/v2c default, v3 when a session is bound) ────
+
+    private async Task<string?> SessionGetAsync(IPEndPoint endpoint, string community, int timeoutMs, string oid, CancellationToken ct)
     {
-        try
-        {
-            var result = await Task.Run(() =>
-            {
-                var variables = new List<Variable> { new(new ObjectIdentifier(oid)) };
-                var response = Messenger.Get(VersionCode.V2,
-                    endpoint,
-                    new OctetString(community),
-                    variables,
-                    timeoutMs);
+        if (_session is not null)
+            return await _session.GetAsync(endpoint, oid, timeoutMs, ct);
 
-                return response.FirstOrDefault()?.Data.ToString();
-            });
-
-            return result;
-        }
-        catch
-        {
-            return null;
-        }
+        // Default path: fresh v1/v2c session per call (matches legacy behavior).
+        using var session = new SnmpSession(new SnmpCredentials { Community = community, TimeoutMs = timeoutMs });
+        return await session.GetAsync(endpoint, oid, timeoutMs, ct);
     }
 
-    private static async Task<List<Variable>> WalkAsync(IPEndPoint endpoint, string community, string rootOid, int timeoutMs, CancellationToken ct)
+    private async Task<List<Variable>> SessionWalkAsync(IPEndPoint endpoint, string community, string rootOid, int timeoutMs, CancellationToken ct)
     {
-        var results = new List<Variable>();
+        if (_session is not null)
+            return await _session.WalkAsync(endpoint, rootOid, timeoutMs, ct);
 
-        await Task.Run(() =>
-        {
-            try
-            {
-                Messenger.Walk(VersionCode.V2,
-                    endpoint,
-                    new OctetString(community),
-                    new ObjectIdentifier(rootOid),
-                    results,
-                    timeoutMs,
-                    WalkMode.WithinSubtree);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[SNMP] Walk failed for {rootOid}: {ex.Message}");
-            }
-        }, ct);
-
-        return results;
+        using var session = new SnmpSession(new SnmpCredentials { Community = community, TimeoutMs = timeoutMs });
+        return await session.WalkAsync(endpoint, rootOid, timeoutMs, ct);
     }
 
-    // ── NEW: lightweight 3-OID probe used by NetDiscoveryTask for fingerprinting ──
-    // Does NOT do a full walk — only fetches sysDescr, sysObjectID, sysName.
-    // Called once per discovered host, after ICMP/ARP already found it.
-    // Returns null if the host does not respond to SNMP at all.
-    public static async Task<SnmpFingerprint?> ProbeForDiscoveryAsync(
-        string ipAddress,
-        string community,
-        int timeoutMs)
+    // ── Lightweight 3-OID probe used by NetDiscoveryTask for fingerprinting ────
+
+    /// <summary>Compatibility overload using v2c community credentials (no v3).</summary>
+    public static Task<SnmpFingerprint?> ProbeForDiscoveryAsync(string ipAddress, string community, int timeoutMs)
+        => ProbeWithSessionAsync(ipAddress, new SnmpSession(new SnmpCredentials { Community = community, TimeoutMs = timeoutMs }), timeoutMs);
+
+    /// <summary>Probe using a session built from AgentOptions (supports v3 USM).</summary>
+    public static async Task<SnmpFingerprint?> ProbeForDiscoveryAsync(string ipAddress, SnmpSession session, int timeoutMs)
+        => await ProbeWithSessionAsync(ipAddress, session, timeoutMs);
+
+    private static async Task<SnmpFingerprint?> ProbeWithSessionAsync(string ipAddress, SnmpSession session, int timeoutMs)
     {
         var endpoint = new IPEndPoint(IPAddress.Parse(ipAddress), 161);
 
         try
         {
-            // Fire all 3 GETs concurrently — faster than sequential
-            var descrTask = GetAsync(endpoint, community, OidSysDescr, timeoutMs);
-            var objectIdTask = GetAsync(endpoint, community, OidSysObjectID, timeoutMs);
-            var nameTask = GetAsync(endpoint, community, OidSysName, timeoutMs);
+            var descrTask = session.GetAsync(endpoint, OidSysDescr, timeoutMs);
+            var objectIdTask = session.GetAsync(endpoint, OidSysObjectID, timeoutMs);
+            var nameTask = session.GetAsync(endpoint, OidSysName, timeoutMs);
 
             await Task.WhenAll(descrTask, objectIdTask, nameTask);
 
@@ -192,7 +178,6 @@ public class SnmpNetworkCollector
             var sysObjectId = await objectIdTask;
             var sysName = await nameTask;
 
-            // If all 3 came back null the host is not speaking SNMP
             if (sysDescr is null && sysObjectId is null && sysName is null)
                 return null;
 
@@ -205,15 +190,13 @@ public class SnmpNetworkCollector
         }
         catch
         {
-            return null;    // host not reachable on SNMP — not an error, just not an SNMP device
+            return null;
         }
     }
 }
 
 /// <summary>
 /// Lightweight result from a 3-OID SNMP probe during NetDiscovery.
-/// Only the fields needed for fingerprinting — not a full inventory.
-/// Full inventory is done later by NetInventoryTask.
 /// </summary>
 public sealed class SnmpFingerprint
 {
