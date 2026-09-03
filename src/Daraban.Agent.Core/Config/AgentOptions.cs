@@ -103,6 +103,22 @@ public sealed class AgentOptions
     public bool UseGzip { get; set; } = false;
     public int Threads { get; set; } = 4;
 
+    // ---- Partial inventory (mirrors glpi-agent full-inventory-postpone) ----------
+    /// <summary>
+    /// Number of runs before the agent is allowed to report a partial inventory
+    /// (only changed categories) instead of a full one. Mirrors glpi-agent's
+    /// `full-inventory-postpone`. 0 disables the feature (always full inventory).
+    /// Default matches glpi-agent (14).
+    /// </summary>
+    public int FullInventoryPostpone { get; set; } = 14;
+
+    /// <summary>
+    /// Categories that are always included in a partial inventory, even when unchanged
+    /// (mirrors glpi-agent `required-category`). Useful for GLPI business rules that rely
+    /// on category content, e.g. "network" for IP-range analysis.
+    /// </summary>
+    public List<string> RequiredCategories { get; set; } = new();
+
 
     // ---- NetDiscovery / NetInventory ----------------------------------------
     public string? IpRange { get; set; }          // e.g. "192.168.1.0/24"
