@@ -4,6 +4,9 @@ namespace Daraban.Agent.Core.Transport;
 
 public interface IDarabanClient
 {
+    /// <summary>Base server URL this client posts to (used in multi-target logs).</summary>
+    string ServerUrl { get; }
+
     /// <summary>
     /// Mirrors the real agent's "prolog": a handshake the server uses to tell the agent
     /// which tasks/schedule apply to it. Call this before running scheduled tasks.

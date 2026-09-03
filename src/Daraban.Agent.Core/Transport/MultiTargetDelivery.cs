@@ -16,7 +16,7 @@ public static class MultiTargetDelivery
     /// </summary>
     public static async Task ForEachServerAsync(
         AgentOptions options,
-        Func<DarabanClient, Task> send,
+        Func<IDarabanClient, Task> send,
         CancellationToken ct)
     {
         foreach (var client in DarabanClientFactory.CreateAll(options))

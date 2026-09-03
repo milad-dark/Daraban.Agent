@@ -6,7 +6,7 @@ namespace Daraban.Agent.Core.Transport;
 
 public static class DarabanClientFactory
 {
-    public static DarabanClient Create(AgentOptions options)
+    public static IDarabanClient Create(AgentOptions options)
     {
         if (options.Servers.Count == 0 || string.IsNullOrWhiteSpace(options.Servers[0]))
             throw new InvalidOperationException("AgentOptions.Servers must contain at least one server before creating a DarabanClient.");
@@ -15,13 +15,13 @@ public static class DarabanClientFactory
     }
 
     /// <summary>
-    /// Creates one DarabanClient per configured server target. Used for multi-target
-    /// delivery (mirrors glpi-agent's comma-separated `server`: results are sent to
-    /// every target, and one failing target never blocks the others).
+    /// Creates one client per configured server target. Used for multi-target delivery
+    /// (mirrors glpi-agent's comma-separated `server`: results are sent to every target,
+    /// and one failing target never blocks the others).
     /// </summary>
-    public static List<DarabanClient> CreateAll(AgentOptions options)
+    public static List<IDarabanClient> CreateAll(AgentOptions options)
     {
-        var clients = new List<DarabanClient>();
+        var clients = new List<IDarabanClient>();
         foreach (var server in options.Servers)
         {
             if (string.IsNullOrWhiteSpace(server)) continue;
@@ -37,10 +37,16 @@ public static class DarabanClientFactory
         return clients;
     }
 
-    private static DarabanClient CreateFor(AgentOptions options, string server)
+    private static IDarabanClient CreateFor(AgentOptions options, string server)
     {
         var handler = BuildHandler(options);
         var http = new HttpClient(handler) { BaseAddress = new Uri(server.TrimEnd('/') + "/"), Timeout = TimeSpan.FromSeconds(30) };
+
+        // FusionInventory compatibility mode talks the legacy XML protocol
+        // (GLPI 9.5 + FusionInventory plugin). Everything else uses the native JSON API.
+        if (options.FusionInventoryCompat)
+            return new FusionInventoryClient(http, options);
+
         return new DarabanClient(http, options);
     }
 
