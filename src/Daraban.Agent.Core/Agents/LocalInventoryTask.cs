@@ -22,6 +22,11 @@ public sealed class LocalInventoryTask : IAgentTask
         // only a few categories changed. Falls back to a full inventory when disabled.
         var snapshotPath = InventoryDiffer.DefaultSnapshotPath(inventory.DeviceId);
         var (content, action, _) = InventoryDiffer.Diff(deviceContent, options, snapshotPath);
+
+        // Additional content merge (mirrors glpi-agent `additional-content`): overlay any
+        // user-supplied XML/JSON fields onto the outgoing content.
+        content = ContentMerger.Merge(content, options.AdditionalContent);
+
         inventory.Action = action;
         inventory.Content = JsonSerializer.Serialize(content);
         var json = JsonSerializer.Serialize(inventory);
