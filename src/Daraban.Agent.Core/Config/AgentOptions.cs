@@ -119,6 +119,13 @@ public sealed class AgentOptions
     /// </summary>
     public List<string> RequiredCategories { get; set; } = new();
 
+    /// <summary>
+    /// Path to an XML or JSON file whose content is merged into the inventory before it is
+    /// sent (mirrors glpi-agent `additional-content`). JSON files use the `content` object;
+    /// XML files use the `&lt;content&gt;` node.
+    /// </summary>
+    public string? AdditionalContent { get; set; }
+
 
     // ---- NetDiscovery / NetInventory ----------------------------------------
     public string? IpRange { get; set; }          // e.g. "192.168.1.0/24"

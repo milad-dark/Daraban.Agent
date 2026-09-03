@@ -34,6 +34,7 @@ class Program
         var onceOpt = new Option<bool>("--once") { Description = "Run the selected tasks a single time and exit (default: loop forever on --delay)", DefaultValueFactory = _ => false };
         var fullInventoryPostponeOpt = new Option<int>("--full-inventory-postpone") { Description = "Runs between full inventories (0 disables partial/differential inventory, default 14)", DefaultValueFactory = _ => 14 };
         var requiredCategoryOpt = new Option<string?>("--required-category") { Description = "Comma-separated categories always included in a partial inventory (e.g. network,software)" };
+        var additionalContentOpt = new Option<string?>("--additional-content") { Description = "Path to an XML/JSON file merged into the inventory before sending (mirrors glpi-agent additional-content)" };
 
         // ---- HTTP status interface --------------------------------------------------------
         var httpPortOpt = new Option<int>("--http-port") { Description = "Agent HTTP status interface port", DefaultValueFactory = _ => 62354 };
@@ -78,7 +79,7 @@ class Program
         {
 serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprintOpt, fusionCompatOpt,
             tasksOpt, noTaskOpt,
-            delayOpt, lazyOpt, onceOpt, fullInventoryPostponeOpt, requiredCategoryOpt,
+            delayOpt, lazyOpt, onceOpt, fullInventoryPostponeOpt, requiredCategoryOpt, additionalContentOpt,
             httpPortOpt, httpTrustOpt, noHttpdOpt,
             ipRangeOpt, communityOpt, snmpTimeoutOpt, threadsOpt, snmpRetriesOpt,
             snmpVersionOpt, snmpV3UserOpt, snmpV3AuthPassOpt, snmpV3AuthProtoOpt, snmpV3PrivPassOpt, snmpV3PrivProtoOpt,
@@ -96,7 +97,7 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
                 return await RunOneOffCollectorAsync(method, pr.GetValue(hostOpt)!, pr.GetValue(userOpt)!, pr.GetValue(passOpt)!, pr.GetValue(fileOpt)!, ct);
 
             var options = BuildOptions(pr, serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprintOpt, fusionCompatOpt, tasksOpt, noTaskOpt,
-                delayOpt, lazyOpt, onceOpt, fullInventoryPostponeOpt, requiredCategoryOpt, httpPortOpt, httpTrustOpt, noHttpdOpt,
+                delayOpt, lazyOpt, onceOpt, fullInventoryPostponeOpt, requiredCategoryOpt, additionalContentOpt, httpPortOpt, httpTrustOpt, noHttpdOpt,
                 ipRangeOpt, communityOpt, snmpTimeoutOpt, threadsOpt, snmpRetriesOpt, snmpVersionOpt, snmpV3UserOpt, snmpV3AuthPassOpt, snmpV3AuthProtoOpt, snmpV3PrivPassOpt, snmpV3PrivProtoOpt,
                 wolMacOpt, wolBroadcastOpt, deployWorkDirOpt, esxHostOpt, esxUserOpt, esxPasswordOpt, agentIdOption, gzipOption);
 
@@ -223,7 +224,7 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
     static AgentOptions BuildOptions(ParseResult pr,
         Option<string?> serverOpt, Option<string?> localOpt, Option<string?> tagOpt, Option<string?> apiKeyOpt, Option<string?> proxyOpt, Option<string?> sslKeystoreOpt, Option<string?> sslFingerprintOpt, Option<bool> fusionCompatOpt,
         Option<string?> tasksOpt, Option<string?> noTaskOpt,
-        Option<int> delayOpt, Option<bool> lazyOpt, Option<bool> onceOpt, Option<int> fullInventoryPostponeOpt, Option<string?> requiredCategoryOpt,
+        Option<int> delayOpt, Option<bool> lazyOpt, Option<bool> onceOpt, Option<int> fullInventoryPostponeOpt, Option<string?> requiredCategoryOpt, Option<string?> additionalContentOpt,
         Option<int> httpPortOpt, Option<string?> httpTrustOpt, Option<bool> noHttpdOpt,
         Option<string?> ipRangeOpt, Option<string> communityOpt, Option<int> snmpTimeoutOpt, Option<int> threadsOpt, Option<int> snmpRetriesOpt,
         Option<string> snmpVersionOpt, Option<string?> snmpV3UserOpt, Option<string?> snmpV3AuthPassOpt, Option<string> snmpV3AuthProtoOpt, Option<string?> snmpV3PrivPassOpt, Option<string> snmpV3PrivProtoOpt,
@@ -243,6 +244,7 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
             Lazy = pr.GetValue(lazyOpt),
             RunOnce = pr.GetValue(onceOpt),
             FullInventoryPostpone = pr.GetValue(fullInventoryPostponeOpt),
+            AdditionalContent = pr.GetValue(additionalContentOpt),
             HttpPort = pr.GetValue(httpPortOpt),
             HttpTrust = pr.GetValue(httpTrustOpt),
             NoHttpd = pr.GetValue(noHttpdOpt),
