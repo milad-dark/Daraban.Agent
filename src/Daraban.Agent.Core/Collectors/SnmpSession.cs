@@ -45,33 +45,82 @@ public sealed class SnmpSession : IDisposable
     /// <summary>Returns the value of a single OID, or null when the device does not respond.</summary>
     public async Task<string?> GetAsync(IPEndPoint endpoint, string oid, int timeoutMs, CancellationToken ct = default)
     {
-        try
+        var retries = Math.Max(0, Credentials.Retries);
+        for (int attempt = 0; attempt <= retries; attempt++)
         {
-            if (IsV3)
+            ct.ThrowIfCancellationRequested();
+
+            string? result;
+            try
             {
-                await EnsureEngineAsync(endpoint, timeoutMs, ct);
-                var variables = new List<Variable> { new(new ObjectIdentifier(oid)) };
-                var msg = new GetRequestMessage(VersionCode.V3, NextId(), NextId(), _userName,
-                    new OctetString(""), variables, _privacy, 65535, null);
-                var response = await msg.GetResponseAsync(endpoint, _users, ct);
-                return response.Scope.Pdu.Variables.FirstOrDefault()?.Data.ToString();
+                result = await GetOnceAsync(endpoint, oid, timeoutMs, ct);
+            }
+            catch
+            {
+                result = null;
             }
 
-            return await Task.Run(() =>
-            {
-                var vars = new List<Variable> { new(new ObjectIdentifier(oid)) };
-                return Messenger.Get(_version, endpoint, _community, vars, timeoutMs)
-                    .FirstOrDefault()?.Data.ToString();
-            }, ct);
+            // A value (even empty) is a definitive answer. Only null means "no response",
+            // which is what snmp-retries is meant to cover.
+            if (result is not null)
+                return result;
+
+            if (attempt < retries)
+                await Task.Delay(200, ct);
         }
-        catch
-        {
-            return null;
-        }
+
+        return null;
     }
 
     /// <summary>Walks the subtree under <paramref name="rootOid"/>, returning all variables.</summary>
     public async Task<List<Variable>> WalkAsync(IPEndPoint endpoint, string rootOid, int timeoutMs, CancellationToken ct = default)
+    {
+        var retries = Math.Max(0, Credentials.Retries);
+        for (int attempt = 0; attempt <= retries; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var results = await WalkOnceAsync(endpoint, rootOid, timeoutMs, ct);
+
+            // Reuse any partial walk data; only retry wholesale when nothing came back.
+            if (results.Count > 0)
+                return results;
+
+            if (attempt < retries)
+                await Task.Delay(200, ct);
+        }
+
+        return [];
+    }
+
+    public void Dispose()
+    {
+        // SharpSnmpLib opens/closes its UDP sockets per operation; nothing to release here.
+    }
+
+    // ── single-shot operations (retry loop lives in GetAsync/WalkAsync) ───────
+
+    private async Task<string?> GetOnceAsync(IPEndPoint endpoint, string oid, int timeoutMs, CancellationToken ct)
+    {
+        if (IsV3)
+        {
+            await EnsureEngineAsync(endpoint, timeoutMs, ct);
+            var variables = new List<Variable> { new(new ObjectIdentifier(oid)) };
+            var msg = new GetRequestMessage(VersionCode.V3, NextId(), NextId(), _userName,
+                new OctetString(""), variables, _privacy, 65535, null);
+            var response = await msg.GetResponseAsync(endpoint, _users, ct);
+            return response.Scope.Pdu.Variables.FirstOrDefault()?.Data.ToString();
+        }
+
+        return await Task.Run(() =>
+        {
+            var vars = new List<Variable> { new(new ObjectIdentifier(oid)) };
+            return Messenger.Get(_version, endpoint, _community, vars, timeoutMs)
+                .FirstOrDefault()?.Data.ToString();
+        }, ct);
+    }
+
+    private async Task<List<Variable>> WalkOnceAsync(IPEndPoint endpoint, string rootOid, int timeoutMs, CancellationToken ct)
     {
         var results = new List<Variable>();
 
@@ -98,17 +147,20 @@ public sealed class SnmpSession : IDisposable
         {
             await Task.Run(() =>
             {
-                Messenger.Walk(_version, endpoint, _community, new ObjectIdentifier(rootOid), results,
-                    timeoutMs, WalkMode.WithinSubtree);
+                try
+                {
+                    Messenger.Walk(_version, endpoint, _community, new ObjectIdentifier(rootOid), results,
+                        timeoutMs, WalkMode.WithinSubtree);
+                }
+                catch
+                {
+                    // Timeouts/ICMP errors on a walk are common mid-scan — return whatever
+                    // we accumulated so the retry loop can decide whether to try again.
+                }
             }, ct);
         }
 
         return results;
-    }
-
-    public void Dispose()
-    {
-        // SharpSnmpLib opens/closes its UDP sockets per operation; nothing to release here.
     }
 
     // ── internals ─────────────────────────────────────────────────────────────
@@ -183,6 +235,7 @@ public sealed class SnmpCredentials
     public string? PrivPass { get; set; }
     public string PrivProtocol { get; set; } = "AES";
     public int TimeoutMs { get; set; } = 2000;
+    public int Retries { get; set; } = 0;
 
     /// <summary>Maps AgentOptions SNMP settings to a credentials object once, at call sites.</summary>
     public static SnmpCredentials FromAgentOptions(Daraban.Agent.Core.Config.AgentOptions options)
@@ -196,5 +249,6 @@ public sealed class SnmpCredentials
             PrivPass = options.SnmpV3PrivPass,
             PrivProtocol = options.SnmpV3PrivProtocol,
             TimeoutMs = options.SnmpTimeoutMs,
+            Retries = options.SnmpRetries,
         };
 }

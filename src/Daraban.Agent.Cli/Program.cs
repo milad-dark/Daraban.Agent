@@ -41,6 +41,7 @@ class Program
         var ipRangeOpt = new Option<string?>("--ip-range") { Description = "CIDR range to sweep, e.g. 192.168.1.0/24 (netdiscovery/netinventory)" };
         var communityOpt = new Option<string>("--snmp-community") { Description = "SNMP community string", DefaultValueFactory = _ => "public" };
         var snmpTimeoutOpt = new Option<int>("--snmp-timeout") { Description = "SNMP timeout in ms", DefaultValueFactory = _ => 2000 };
+        var snmpRetriesOpt = new Option<int>("--snmp-retries") { Description = "Max SNMP retries per request when a device does not respond", DefaultValueFactory = _ => 0 };
         var threadsOpt = new Option<int>("--discovery-threads") { Description = "Parallel probes for netdiscovery/netinventory", DefaultValueFactory = _ => 32 };
         var snmpVersionOpt = new Option<string>("--snmp-version") { Description = "SNMP version: v1, v2c (default) or v3", DefaultValueFactory = _ => "v2c" };
         var snmpV3UserOpt = new Option<string?>("--snmp-v3-user") { Description = "SNMPv3 USM username" };
@@ -76,7 +77,7 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
             tasksOpt, noTaskOpt,
             delayOpt, lazyOpt, onceOpt,
             httpPortOpt, httpTrustOpt, noHttpdOpt,
-            ipRangeOpt, communityOpt, snmpTimeoutOpt, threadsOpt,
+            ipRangeOpt, communityOpt, snmpTimeoutOpt, threadsOpt, snmpRetriesOpt,
             snmpVersionOpt, snmpV3UserOpt, snmpV3AuthPassOpt, snmpV3AuthProtoOpt, snmpV3PrivPassOpt, snmpV3PrivProtoOpt,
             wolMacOpt, wolBroadcastOpt,
             deployWorkDirOpt,
@@ -93,7 +94,7 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
 
             var options = BuildOptions(pr, serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprintOpt, tasksOpt, noTaskOpt,
                 delayOpt, lazyOpt, onceOpt, httpPortOpt, httpTrustOpt, noHttpdOpt,
-                ipRangeOpt, communityOpt, snmpTimeoutOpt, threadsOpt, snmpVersionOpt, snmpV3UserOpt, snmpV3AuthPassOpt, snmpV3AuthProtoOpt, snmpV3PrivPassOpt, snmpV3PrivProtoOpt,
+                ipRangeOpt, communityOpt, snmpTimeoutOpt, threadsOpt, snmpRetriesOpt, snmpVersionOpt, snmpV3UserOpt, snmpV3AuthPassOpt, snmpV3AuthProtoOpt, snmpV3PrivPassOpt, snmpV3PrivProtoOpt,
                 wolMacOpt, wolBroadcastOpt, deployWorkDirOpt, esxHostOpt, esxUserOpt, esxPasswordOpt, agentIdOption, gzipOption);
 
             return await RunAgentAsync(options, ct);
@@ -221,7 +222,7 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
         Option<string?> tasksOpt, Option<string?> noTaskOpt,
         Option<int> delayOpt, Option<bool> lazyOpt, Option<bool> onceOpt,
         Option<int> httpPortOpt, Option<string?> httpTrustOpt, Option<bool> noHttpdOpt,
-        Option<string?> ipRangeOpt, Option<string> communityOpt, Option<int> snmpTimeoutOpt, Option<int> threadsOpt,
+        Option<string?> ipRangeOpt, Option<string> communityOpt, Option<int> snmpTimeoutOpt, Option<int> threadsOpt, Option<int> snmpRetriesOpt,
         Option<string> snmpVersionOpt, Option<string?> snmpV3UserOpt, Option<string?> snmpV3AuthPassOpt, Option<string> snmpV3AuthProtoOpt, Option<string?> snmpV3PrivPassOpt, Option<string> snmpV3PrivProtoOpt,
         Option<string?> wolMacOpt, Option<string?> wolBroadcastOpt, Option<string?> deployWorkDirOpt,
         Option<string?> esxHostOpt, Option<string?> esxUserOpt, Option<string?> esxPasswordOpt, Option<string> agentId, Option<bool> gzipOption)
@@ -244,6 +245,7 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
             SnmpCommunity = pr.GetValue(communityOpt) ?? "public",
             SnmpTimeoutMs = pr.GetValue(snmpTimeoutOpt),
             DiscoveryThreads = pr.GetValue(threadsOpt),
+            SnmpRetries = pr.GetValue(snmpRetriesOpt),
             SnmpVersion = pr.GetValue(snmpVersionOpt) ?? "v2c",
             SnmpV3User = pr.GetValue(snmpV3UserOpt),
             SnmpV3AuthPass = pr.GetValue(snmpV3AuthPassOpt),
