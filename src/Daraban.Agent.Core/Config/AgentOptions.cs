@@ -114,6 +114,12 @@ public sealed class AgentOptions
     /// <summary>Privacy (encryption) protocol for SNMPv3: "DES" or "AES".</summary>
     public string SnmpV3PrivProtocol { get; set; } = "AES";
 
+    /// <summary>
+    /// Maximum number of times a SNMP request is retried after a device fails to
+    /// respond. Mirrors glpi-agent's `snmp-retries` (default 0, no retry).
+    /// </summary>
+    public int SnmpRetries { get; set; } = 0;
+
     // ---- WakeOnLan -----------------------------------------------------------
     public List<string> WakeOnLanMacs { get; set; } = new();   // "AA:BB:CC:DD:EE:FF"
     public string? WakeOnLanBroadcast { get; set; }             // defaults to 255.255.255.255
