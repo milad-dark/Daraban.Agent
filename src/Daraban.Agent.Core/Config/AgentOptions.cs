@@ -62,6 +62,13 @@ public sealed class AgentOptions
     /// </summary>
     public string? SslFingerprint { get; set; }
 
+    /// <summary>
+    /// When true, talks the legacy FusionInventory XML protocol (GLPI 9.5 + FusionInventory
+    /// plugin) at /plugins/fusioninventory/communication.php instead of the native JSON API.
+    /// Mirrors glpi-agent's backward-compatibility with FusionInventory for GLPI.
+    /// </summary>
+    public bool FusionInventoryCompat { get; set; } = false;
+
     // OAuth2 client-credentials configuration. ClientSecret must be supplied by a secret
     // provider/environment variable in production, never committed to appsettings.json.
     public string? OAuthTokenEndpoint { get; set; }
