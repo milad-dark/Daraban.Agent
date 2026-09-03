@@ -39,7 +39,7 @@ public sealed class DarabanClient : IDarabanClient
             _http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Daraban-Agent", "1.0"));
     }
 
-    public async Task<string?> PrologAsync(string deviceId, CancellationToken ct = default)
+    public async Task<PrologResponse?> PrologAsync(string deviceId, CancellationToken ct = default)
     {
         try
         {
@@ -50,7 +50,23 @@ public sealed class DarabanClient : IDarabanClient
                 Console.WriteLine($"[server] Prolog failed: HTTP {(int)resp.StatusCode}");
                 return null;
             }
-            return await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+            var json = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(json))
+                return null;
+
+            // A real GLPI server replies with prolog JSON. If the payload isn't JSON
+            // (e.g. a non-GLPI endpoint), degrade gracefully to null — the agent keeps
+            // its local schedule, which matches pre-1.6 behavior.
+            try
+            {
+                return JsonSerializer.Deserialize<PrologResponse>(json, JsonOpts);
+            }
+            catch (JsonException ex)
+            {
+                Console.WriteLine($"[server] Prolog response was not valid JSON ({ex.Message}); using local schedule.");
+                return null;
+            }
         }
         catch (Exception ex)
         {
@@ -279,6 +295,7 @@ public sealed class DarabanClient : IDarabanClient
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
         WriteIndented = false
     };

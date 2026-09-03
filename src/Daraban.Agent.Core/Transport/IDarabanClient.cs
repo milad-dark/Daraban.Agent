@@ -7,9 +7,9 @@ public interface IDarabanClient
     /// <summary>
     /// Mirrors the real agent's "prolog": a handshake the server uses to tell the agent
     /// which tasks/schedule apply to it. Call this before running scheduled tasks.
-    /// Returns the raw JSON config the server replied with, or null if unreachable.
+    /// Returns the parsed prolog response, or null if unreachable / not valid GLPI JSON.
     /// </summary>
-    Task<string?> PrologAsync(string deviceId, CancellationToken ct = default);
+    Task<PrologResponse?> PrologAsync(string deviceId, CancellationToken ct = default);
 
     /// <summary>Sends a local/remote computer inventory using GLPI's native JSON inventory format.</summary>
     Task PostInventoryAsync(string deviceId, object contentObject, string itemtype = "Computer", CancellationToken ct = default);

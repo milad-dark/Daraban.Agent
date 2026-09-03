@@ -13,25 +13,31 @@ public sealed class AgentRunner(IEnumerable<IAgentTask> tasks, AgentStatusTracke
 {
     private readonly List<IAgentTask> _tasks = [.. tasks];
 
-    /// <summary>Runs the configured tasks immediately, then again every DelayTimeSeconds, until cancelled.</summary>
+    /// <summary>Server-provided delay (seconds) from the last prolog; 0 = use local DelayTimeSeconds.</summary>
+    private volatile int _serverDelaySeconds;
+
+    /// <summary>Runs the configured tasks immediately, then again every DelayTimeSeconds (or the server-provided delay), until cancelled.</summary>
     public async Task RunForeverAsync(AgentOptions options, CancellationToken ct)
     {
-        var interval = TimeSpan.FromSeconds(Math.Max(5, options.DelayTimeSeconds));
-        Console.WriteLine($"[agent] Scheduler starting: every {interval.TotalSeconds:0}s, tasks=[{string.Join(", ", ResolveTaskNames(options))}]");
-
-        using var timer = new PeriodicTimer(interval);
+        Console.WriteLine($"[agent] Scheduler starting: every {Math.Max(5, options.DelayTimeSeconds)}s, tasks=[{string.Join(", ", ResolveTaskNames(options))}]");
 
         do
         {
             await RunOnceAsync(options, ct);
+            if (ct.IsCancellationRequested)
+                break;
+            var interval = TimeSpan.FromSeconds(Math.Max(5, _serverDelaySeconds > 0 ? _serverDelaySeconds : options.DelayTimeSeconds));
+            await WaitNextTickAsync(interval, options, ct);
         }
-        while (!ct.IsCancellationRequested && await WaitNextTickAsync(timer, options, ct));
+        while (!ct.IsCancellationRequested);
     }
 
     /// <summary>Runs the prolog handshake (if a server is configured) followed by every selected task, once.</summary>
     public async Task RunOnceAsync(AgentOptions options, CancellationToken ct)
     {
         var deviceId = options.Tag ?? Environment.MachineName;
+        List<string>? prologTasks = null;
+        var prologRemotes = new List<string>();
 
         if (options.Servers.Count > 0)
         {
@@ -39,9 +45,27 @@ public sealed class AgentRunner(IEnumerable<IAgentTask> tasks, AgentStatusTracke
             {
                 try
                 {
-                    var config = await client.PrologAsync(deviceId, ct);
-                    if (!string.IsNullOrWhiteSpace(config))
-                        Console.WriteLine($"[agent] Prolog config from {client.ServerUrl}: {config}");
+                    var prolog = await client.PrologAsync(deviceId, ct);
+                    if (prolog is null)
+                        continue;
+
+                    // First server that answers wins the schedule; later ones still get
+                    // their prolog logged but do not override an already-applied one.
+                    if (prolog.Tasks is { Count: > 0 } && prologTasks is null)
+                        prologTasks = prolog.Tasks;
+
+                    foreach (var target in prolog.Remote)
+                    {
+                        if (!string.IsNullOrWhiteSpace(target.ToConnectionString()))
+                            prologRemotes.Add(target.ToConnectionString());
+                    }
+
+                    if (prolog.DelayTime > 0)
+                        _serverDelaySeconds = prolog.DelayTime;
+
+                    Console.WriteLine($"[agent] Prolog config from {client.ServerUrl}: " +
+                        $"tasks=[{string.Join(",", prolog.Tasks ?? [])}], " +
+                        $"remotes=[{string.Join(",", prologRemotes)}]");
                 }
                 catch (Exception ex)
                 {
@@ -52,7 +76,17 @@ public sealed class AgentRunner(IEnumerable<IAgentTask> tasks, AgentStatusTracke
             }
         }
 
-        foreach (var name in ResolveTaskNames(options))
+        // Merge server-provided remote targets into this run's remote list so
+        // RemoteInventoryTask picks them up.
+        if (prologRemotes.Count > 0)
+        {
+            var known = new HashSet<string>(options.RemoteHosts, StringComparer.OrdinalIgnoreCase);
+            options.RemoteHosts.AddRange(prologRemotes.Where(r => known.Add(r)));
+        }
+
+        var taskNames = prologTasks ?? ResolveTaskNames(options);
+
+        foreach (var name in taskNames)
         {
             var task = _tasks.FirstOrDefault(t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase));
             if (task is null)
@@ -92,7 +126,7 @@ public sealed class AgentRunner(IEnumerable<IAgentTask> tasks, AgentStatusTracke
             .ToList();
     }
 
-    private static async Task<bool> WaitNextTickAsync(PeriodicTimer timer, AgentOptions options, CancellationToken ct)
+    private static async Task WaitNextTickAsync(TimeSpan interval, AgentOptions options, CancellationToken ct)
     {
         try
         {
@@ -100,15 +134,13 @@ public sealed class AgentRunner(IEnumerable<IAgentTask> tasks, AgentStatusTracke
             // agents restarted at the same time (e.g. after a patch reboot wave) doesn't
             // all hit the server in the same second.
             if (options.Lazy)
-            {
-                var jitterMs = Random.Shared.Next(0, 30_000);
-                await Task.Delay(jitterMs, ct);
-            }
-            return await timer.WaitForNextTickAsync(ct);
+                await Task.Delay(Random.Shared.Next(0, 30_000), ct);
+
+            await Task.Delay(interval, ct);
         }
         catch (OperationCanceledException)
         {
-            return false;
+            // swallow — caller checks ct.IsCancellationRequested
         }
     }
 }
