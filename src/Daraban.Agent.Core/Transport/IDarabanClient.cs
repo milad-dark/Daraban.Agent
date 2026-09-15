@@ -18,7 +18,7 @@ public interface IDarabanClient
     Task PostInventoryAsync(string deviceId, object contentObject, string itemtype = "Computer", CancellationToken ct = default);
 
     /// <summary>Backward-compatible overload for callers that already serialized JSON.</summary>
-    Task PostInventoryAsync(string jsonPayload, CancellationToken ct = default);
+    Task PostInventoryAsync(string jsonPayload, string itemtype = "Computer", CancellationToken ct = default);
 
     Task PostDiscoveryAsync(string deviceId, IEnumerable<DiscoveredHost> hosts, CancellationToken ct = default);
 
@@ -26,7 +26,7 @@ public interface IDarabanClient
 
     Task PostWakeOnLanResultAsync(string deviceId, IEnumerable<WakeOnLanResult> results, CancellationToken ct = default);
 
-    Task PostEsxInventoryAsync(string deviceId, EsxHostInfo host, CancellationToken ct = default);
+    Task PostEsxInventoryAsync(string deviceId, EsxHostInfo host, string itemtype = "EsxHost", CancellationToken ct = default);
 
     /// <summary>Polls the server for any deploy jobs queued for this agent.</summary>
     Task<List<DeployJob>> GetPendingDeployJobsAsync(string deviceId, CancellationToken ct = default);

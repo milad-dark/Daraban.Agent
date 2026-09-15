@@ -59,7 +59,7 @@ public sealed class EsxInventoryTask : IAgentTask
             await MultiTargetDelivery.ForEachServerAsync(options, async client =>
             {
                 foreach (var host in hosts)
-                    await client.PostEsxInventoryAsync(deviceId, host, ct);
+                    await client.PostEsxInventoryAsync(deviceId, host, options.EsxItemtype ?? "EsxHost", ct);
             }, ct);
             Console.WriteLine("[esx] Results sent to server(s).");
         }
