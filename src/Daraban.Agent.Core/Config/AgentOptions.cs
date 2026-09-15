@@ -120,6 +120,13 @@ public sealed class AgentOptions
     public List<string> RequiredCategories { get; set; } = new();
 
     /// <summary>
+    /// Categories to exclude from the inventory output (mirrors glpi-agent `no-category`),
+    /// e.g. ["process", "software"] to skip expensive sections. Unknown names are logged
+    /// and ignored. List categories are sent empty; string categories are blanked.
+    /// </summary>
+    public List<string> NoCategories { get; set; } = new();
+
+    /// <summary>
     /// Path to an XML or JSON file whose content is merged into the inventory before it is
     /// sent (mirrors glpi-agent `additional-content`). JSON files use the `content` object;
     /// XML files use the `&lt;content&gt;` node.

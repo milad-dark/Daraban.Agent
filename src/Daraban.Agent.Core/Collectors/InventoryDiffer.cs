@@ -122,6 +122,46 @@ public static class InventoryDiffer
         }
     }
 
+    /// <summary>
+    /// Removes the named categories from the inventory content (mirrors glpi-agent
+    /// `no-category`). List categories become empty lists, scalar/string categories are
+    /// blanked, and unknown category names are logged and ignored.
+    /// </summary>
+    public static DeviceContent StripCategories(DeviceContent content, IEnumerable<string> noCategories)
+    {
+        var map = CategoryMap();
+
+        foreach (var name in noCategories)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                continue;
+
+            if (!map.TryGetValue(name.Trim(), out var entry))
+            {
+                Console.Error.WriteLine($"[filter] Unknown no-category name '{name}' — skipped. Known: {string.Join(", ", map.Keys)}");
+                continue;
+            }
+
+            var prop = entry.Prop;
+            if (prop.PropertyType.IsGenericType &&
+                prop.PropertyType.GetGenericTypeDefinition() == typeof(List<>))
+            {
+                prop.SetValue(content, Activator.CreateInstance(prop.PropertyType));
+            }
+            else if (prop.PropertyType == typeof(string))
+            {
+                prop.SetValue(content, string.Empty);
+            }
+            else
+            {
+                // Struct/record categories (Bios, ComputerSystem) → default instance.
+                prop.SetValue(content, Activator.CreateInstance(prop.PropertyType));
+            }
+        }
+
+        return content;
+    }
+
     // ── internals ──────────────────────────────────────────────────────────────
 
     private static Dictionary<string, string> ComputeCategoryHashes(DeviceContent content)

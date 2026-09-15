@@ -18,6 +18,14 @@ public sealed class LocalInventoryTask : IAgentTask
         // The collector stores DeviceContent serialized as JSON; deserialize for the diff.
         var deviceContent = JsonSerializer.Deserialize<DeviceContent>(inventory.Content) ?? new DeviceContent();
 
+        // Category filtering (mirrors glpi-agent `no-category`): drop excluded sections
+        // before the diff so they never reach the snapshot or the server.
+        if (options.NoCategories.Count > 0)
+        {
+            deviceContent = InventoryDiffer.StripCategories(deviceContent, options.NoCategories);
+            Console.WriteLine($"[local] Excluded categories: {string.Join(", ", options.NoCategories)}");
+        }
+
         // Differential inventory (full-inventory-postpone): produce partial content when
         // only a few categories changed. Falls back to a full inventory when disabled.
         var snapshotPath = InventoryDiffer.DefaultSnapshotPath(inventory.DeviceId);
