@@ -76,7 +76,7 @@ public sealed class FusionInventoryClient : IDarabanClient
         return SendInventoryAsync(deviceId, content, ct);
     }
 
-    public Task PostInventoryAsync(string jsonPayload, CancellationToken ct = default)
+    public Task PostInventoryAsync(string jsonPayload, string itemtype = "Computer", CancellationToken ct = default)
     {
         DeviceContent content;
         string deviceId = "unknown";
@@ -130,7 +130,9 @@ public sealed class FusionInventoryClient : IDarabanClient
     public Task PostWakeOnLanResultAsync(string deviceId, IEnumerable<WakeOnLanResult> results, CancellationToken ct = default)
         => PostGenericResultsAsync(deviceId, "WAKEONLAN", results, ct);
 
-    public Task PostEsxInventoryAsync(string deviceId, EsxHostInfo host, CancellationToken ct = default)
+    // itemtype is a GLPI 11+ concept — the legacy XML protocol has no equivalent, so the
+    // parameter is accepted for interface parity and ignored.
+    public Task PostEsxInventoryAsync(string deviceId, EsxHostInfo host, string itemtype = "EsxHost", CancellationToken ct = default)
         => PostGenericResultsAsync(deviceId, "ESX", new[] { host }, ct);
 
     public Task PostDeployResultAsync(string deviceId, DeployJobResult result, CancellationToken ct = default)

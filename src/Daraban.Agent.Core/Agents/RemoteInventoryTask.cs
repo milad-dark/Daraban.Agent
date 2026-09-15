@@ -67,7 +67,7 @@ public sealed class RemoteInventoryTask : IAgentTask
                 {
                     try
                     {
-                        await client.PostInventoryAsync(json, ct);
+                        await client.PostInventoryAsync(json, itemtype: options.Itemtype ?? "Computer", ct: ct);
                         Console.WriteLine($"[remote] {spec.Host} inventory sent to {client.ServerUrl}.");
                     }
                     catch (Exception ex)

@@ -52,7 +52,7 @@ public sealed class LocalInventoryTask : IAgentTask
         {
             await MultiTargetDelivery.ForEachServerAsync(options, async client =>
             {
-                await client.PostInventoryAsync(inventory.DeviceId, content, ct: ct);
+                await client.PostInventoryAsync(inventory.DeviceId, content, itemtype: options.Itemtype ?? "Computer", ct: ct);
             }, ct);
             Console.WriteLine($"[local] ({action}) Inventory sent to server(s).");
         }

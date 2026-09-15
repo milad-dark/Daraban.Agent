@@ -133,6 +133,19 @@ public sealed class AgentOptions
     /// </summary>
     public string? AdditionalContent { get; set; }
 
+    /// <summary>
+    /// Inventory itemtype for GLPI 11+ custom asset types (mirrors glpi-agent `itemtype`).
+    /// Empty/null keeps "Computer" for GLPI 10 compatibility. Example: Glpi\CustomAsset\ServerAsset.
+    /// Applies to the inventory and remoteinventory tasks.
+    /// </summary>
+    public string? Itemtype { get; set; }
+
+    /// <summary>
+    /// Itemtype for ESX/vCenter inventories (mirrors glpi-agent `esx-itemtype`).
+    /// Empty/null keeps "EsxHost".
+    /// </summary>
+    public string? EsxItemtype { get; set; }
+
 
     // ---- NetDiscovery / NetInventory ----------------------------------------
     public string? IpRange { get; set; }          // e.g. "192.168.1.0/24"

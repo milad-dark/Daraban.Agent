@@ -84,7 +84,7 @@ public sealed class DarabanClient : IDarabanClient
     /// LocalInventoryTask serializes DeviceInventory itself). The deviceId is pulled out
     /// of the JSON's "DeviceId" property so callers don't have to change their call sites.
     /// </summary>
-    public Task PostInventoryAsync(string jsonPayload, CancellationToken ct = default)
+    public Task PostInventoryAsync(string jsonPayload, string itemtype = "Computer", CancellationToken ct = default)
     {
         string deviceId = "unknown";
         object content = jsonPayload;
@@ -98,7 +98,7 @@ public sealed class DarabanClient : IDarabanClient
         }
         catch { /* not our envelope shape — send as-is under an "unknown" device id */ }
 
-        return SendEnvelopeAsync("/api/agent/inventory", deviceId, "inventory", "Computer", content, ct);
+        return SendEnvelopeAsync("/api/agent/inventory", deviceId, "inventory", itemtype, content, ct);
     }
 
     // ------------------------------------------------------------------
@@ -111,8 +111,8 @@ public sealed class DarabanClient : IDarabanClient
     public Task PostWakeOnLanResultAsync(string deviceId, IEnumerable<WakeOnLanResult> results, CancellationToken ct = default)
         => SendEnvelopeAsync("/api/agent/wakeonlan", deviceId, "wakeonlan", null, results, ct);
 
-    public Task PostEsxInventoryAsync(string deviceId, EsxHostInfo host, CancellationToken ct = default)
-        => SendEnvelopeAsync("/api/agent/esx", deviceId, "esx", "EsxHost", host, ct);
+    public Task PostEsxInventoryAsync(string deviceId, EsxHostInfo host, string itemtype = "EsxHost", CancellationToken ct = default)
+        => SendEnvelopeAsync("/api/agent/esx", deviceId, "esx", itemtype, host, ct);
 
     // ------------------------------------------------------------------
     public async Task<List<DeployJob>> GetPendingDeployJobsAsync(string deviceId, CancellationToken ct = default)
