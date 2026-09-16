@@ -108,6 +108,7 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
         });
 
         rootCommand.Subcommands.Add(CreateListTasksCommand());
+        rootCommand.Subcommands.Add(CreateDhcpSniffTestCommand());
 
         var result = await rootCommand.Parse(args).InvokeAsync();
 
@@ -300,5 +301,38 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
             options.AgentId = id;
 
         return options;
+    }
+
+    // ============================================================================
+    // OPTIONAL: add this as a subcommand in Daraban.Agent.Cli/Program.cs to test
+    // DhcpHostnameSniffer in isolation, without waiting on a full netdiscovery cycle.
+    //
+    // 1) Add near your other subcommand registrations:
+    //        rootCommand.Subcommands.Add(CreateDhcpSniffTestCommand());
+    //
+    // 2) Add this method to the Program class:
+    // ============================================================================
+
+    static Command CreateDhcpSniffTestCommand()
+    {
+        var durationOpt = new Option<int>("--seconds") { Description = "How long to listen", DefaultValueFactory = _ => 60 };
+        var cmd = new Command("test-dhcp-sniff", "Listen for DHCP Host Name (option 12) broadcasts and print any hits — needs admin/root");
+        cmd.Options.Add(durationOpt);
+
+        cmd.SetAction(async (ParseResult pr, CancellationToken ct) =>
+        {
+            var seconds = pr.GetValue(durationOpt);
+            Console.WriteLine($"[test-dhcp-sniff] Listening for {seconds}s on UDP/67. Toggle WiFi off/on on the target phone now to force a DHCP renewal...");
+
+            var hits = await Daraban.Agent.Core.Collectors.DhcpHostnameSniffer.ListenForAsync(TimeSpan.FromSeconds(seconds), ct);
+
+            Console.WriteLine($"\n[test-dhcp-sniff] Done. {hits} new hostname(s) captured this run:");
+            foreach (var (mac, name) in Daraban.Agent.Core.Collectors.DhcpHostnameSniffer.HostnameByMac)
+                Console.WriteLine($"  {mac} -> {name}");
+
+            return 0;
+        });
+
+        return cmd;
     }
 }

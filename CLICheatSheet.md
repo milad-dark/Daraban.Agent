@@ -47,6 +47,9 @@ dotnet run --project Daraban.Agent.Cli -- --tasks local --local ./out --once
 
 # NetDiscovery (ping/ARP sweep)
 dotnet run --project Daraban.Agent.Cli -- --tasks netdiscovery --ip-range 192.168.1.0/24 --local ./out --once
+dotnet run --project Daraban.Agent.Cli -- --tasks netdiscovery --ip-range 192.168.0.0/24 --local ./out --delay 30
+dotnet run -- --tasks netdiscovery --once --ip-range "192.168.1.0/24" --local "C:\daraban-test"
+dotnet run --  --tasks netdiscovery --once --ip-range "192.168.1.0/24"  --snmp-community "public"   --snmp-timeout 2000   --discovery-threads 32   --local "C:\daraban-test
 
 # NetInventory (SNMP sweep)
 dotnet run --project Daraban.Agent.Cli -- --tasks netinventory --ip-range 192.168.1.0/24 --snmp-community public --snmp-timeout 2000 --local ./out --once
@@ -63,12 +66,8 @@ dotnet run --project Daraban.Agent.Cli -- --tasks esx --esx-host vcenter.local -
 
 ## 4. Everything at once, to a local folder
 ```bash
-dotnet run --project Daraban.Agent.Cli -- \
-  --tasks local,netdiscovery,netinventory,wakeonlan,esx \
-  --ip-range 192.168.1.0/24 \
-  --wol-mac AA:BB:CC:DD:EE:FF \
-  --esx-host vcenter.local --esx-user administrator@vsphere.local --esx-password mypassword \
-  --local ./out --once
+dotnet run --project Daraban.Agent.Cli --  --tasks local,netdiscovery,netinventory,wakeonlan,esx  --ip-range 192.168.1.0/24 --wol-mac AA:BB:CC:DD:EE:FF --esx-host vcenter.local --esx-user administrator@vsphere.local --esx-password mypassword  --local ./out --once
+dotnet run --project Daraban.Agent.Cli --  --tasks local,netdiscovery,netinventory,wakeonlan,esx  --ip-range 192.168.1.0/24 --wol-mac AA:BB:CC:DD:EE:FF --esx-host vcenter.local --esx-user administrator@vsphere.local --esx-password mypassword  --local ./out --delay 30
 ```
 Check `./out/` — one timestamped JSON file per task.
 

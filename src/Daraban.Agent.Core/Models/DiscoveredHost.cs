@@ -9,6 +9,9 @@ public sealed record DiscoveredHost
     public string? Hostname { get; set; }
     public bool Responded { get; set; }
     public long RoundtripMs { get; set; }
+    public string? Vendor { get; set; }
+    public bool IsRandomizedMac { get; set; }
+
 
     // ── NEW: SNMP fingerprint fields ──────────────────────────────────────────
     public bool SnmpReachable { get; set; }

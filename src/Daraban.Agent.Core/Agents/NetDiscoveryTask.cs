@@ -150,8 +150,33 @@ public sealed class NetDiscoveryTask : IAgentTask
             if (host.Responded)
             {
                 host.MacAddress = localMacs.GetValueOrDefault(host.IpAddress)
-                                  ?? arpTable.GetValueOrDefault(host.IpAddress);
-                host.Hostname = await ReverseDnsAsync(ip, ct);
+                                   ?? arpTable.GetValueOrDefault(host.IpAddress);
+
+                // 1) Standard reverse DNS — works reliably for Windows PCs (DHCP hostname +
+                //    Windows' NetBIOS fallback), rarely for anything else.
+                //host.Hostname = await ReverseDnsAsync(ip, ct);
+
+                // 2) If that came back empty, try mDNS/Bonjour — this is what phones/IoT
+                //    actually use to advertise their name. Reliable for Apple devices and
+                //    Avahi-enabled Linux/IoT; Android varies by OEM.
+                if (host.MacAddress is not null && DhcpHostnameSniffer.HostnameByMac.TryGetValue(host.MacAddress, out var dhcpName))
+                {
+                    host.Hostname = dhcpName;
+                }
+                else
+                {
+
+                    if (string.IsNullOrWhiteSpace(host.Hostname))
+                    {
+                        host.Hostname = await ReverseDnsAsync(ip, ct)
+                      ?? await MdnsResolver.TryResolveAsync(ip, timeoutMs: 300, ct);
+                    }
+                }
+
+                // 3) Still nothing? Fall back to a MAC-vendor guess so the device at least
+                //    shows *something* recognizable instead of a bare null.
+                host.IsRandomizedMac = MacVendorLookup.IsLikelyRandomized(host.MacAddress);
+                host.Vendor = MacVendorLookup.Lookup(host.MacAddress);
             }
         }
         catch
