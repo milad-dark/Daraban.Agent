@@ -38,6 +38,7 @@ class Program
         var noCategoryOpt = new Option<string?>("--no-category") { Description = "Comma-separated categories to exclude from the inventory (e.g. process,software), mirrors glpi-agent no-category" };
         var itemtypeOpt = new Option<string?>("--itemtype") { Description = "Inventory itemtype for GLPI 11+ custom asset types (e.g. \\Glpi\\CustomAsset\\ServerAsset), mirrors glpi-agent itemtype" };
         var esxItemtypeOpt = new Option<string?>("--esx-itemtype") { Description = "Itemtype for ESX/vCenter inventories (GLPI 11+), mirrors glpi-agent esx-itemtype" };
+        var scanHomeDirsOpt = new Option<bool>("--scan-homedirs") { Description = "Scan user home directories for virtual machines (any OS) and licenses (macOS), mirrors glpi-agent scan-homedirs", DefaultValueFactory = _ => false };
 
         // ---- HTTP status interface --------------------------------------------------------
         var httpPortOpt = new Option<int>("--http-port") { Description = "Agent HTTP status interface port", DefaultValueFactory = _ => 62354 };
@@ -82,7 +83,7 @@ class Program
         {
 serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprintOpt, fusionCompatOpt,
             tasksOpt, noTaskOpt,
-            delayOpt, lazyOpt, onceOpt, fullInventoryPostponeOpt, requiredCategoryOpt, additionalContentOpt, noCategoryOpt, itemtypeOpt, esxItemtypeOpt,
+            delayOpt, lazyOpt, onceOpt, fullInventoryPostponeOpt, requiredCategoryOpt, additionalContentOpt, noCategoryOpt, itemtypeOpt, esxItemtypeOpt, scanHomeDirsOpt,
             httpPortOpt, httpTrustOpt, noHttpdOpt,
             ipRangeOpt, communityOpt, snmpTimeoutOpt, threadsOpt, snmpRetriesOpt,
             snmpVersionOpt, snmpV3UserOpt, snmpV3AuthPassOpt, snmpV3AuthProtoOpt, snmpV3PrivPassOpt, snmpV3PrivProtoOpt,
@@ -100,7 +101,7 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
                 return await RunOneOffCollectorAsync(method, pr.GetValue(hostOpt)!, pr.GetValue(userOpt)!, pr.GetValue(passOpt)!, pr.GetValue(fileOpt)!, ct);
 
             var options = BuildOptions(pr, serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprintOpt, fusionCompatOpt, tasksOpt, noTaskOpt,
-                delayOpt, lazyOpt, onceOpt, fullInventoryPostponeOpt, requiredCategoryOpt, additionalContentOpt, noCategoryOpt, itemtypeOpt, esxItemtypeOpt, httpPortOpt, httpTrustOpt, noHttpdOpt,
+                delayOpt, lazyOpt, onceOpt, fullInventoryPostponeOpt, requiredCategoryOpt, additionalContentOpt, noCategoryOpt, itemtypeOpt, esxItemtypeOpt, scanHomeDirsOpt, httpPortOpt, httpTrustOpt, noHttpdOpt,
                 ipRangeOpt, communityOpt, snmpTimeoutOpt, threadsOpt, snmpRetriesOpt, snmpVersionOpt, snmpV3UserOpt, snmpV3AuthPassOpt, snmpV3AuthProtoOpt, snmpV3PrivPassOpt, snmpV3PrivProtoOpt,
                 wolMacOpt, wolBroadcastOpt, deployWorkDirOpt, esxHostOpt, esxUserOpt, esxPasswordOpt, agentIdOption, gzipOption);
 
@@ -228,7 +229,7 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
     static AgentOptions BuildOptions(ParseResult pr,
         Option<string?> serverOpt, Option<string?> localOpt, Option<string?> tagOpt, Option<string?> apiKeyOpt, Option<string?> proxyOpt, Option<string?> sslKeystoreOpt, Option<string?> sslFingerprintOpt, Option<bool> fusionCompatOpt,
         Option<string?> tasksOpt, Option<string?> noTaskOpt,
-        Option<int> delayOpt, Option<bool> lazyOpt, Option<bool> onceOpt, Option<int> fullInventoryPostponeOpt, Option<string?> requiredCategoryOpt, Option<string?> additionalContentOpt, Option<string?> noCategoryOpt, Option<string?> itemtypeOpt, Option<string?> esxItemtypeOpt,
+        Option<int> delayOpt, Option<bool> lazyOpt, Option<bool> onceOpt, Option<int> fullInventoryPostponeOpt, Option<string?> requiredCategoryOpt, Option<string?> additionalContentOpt, Option<string?> noCategoryOpt, Option<string?> itemtypeOpt, Option<string?> esxItemtypeOpt, Option<bool> scanHomeDirsOpt,
         Option<int> httpPortOpt, Option<string?> httpTrustOpt, Option<bool> noHttpdOpt,
         Option<string?> ipRangeOpt, Option<string> communityOpt, Option<int> snmpTimeoutOpt, Option<int> threadsOpt, Option<int> snmpRetriesOpt,
         Option<string> snmpVersionOpt, Option<string?> snmpV3UserOpt, Option<string?> snmpV3AuthPassOpt, Option<string> snmpV3AuthProtoOpt, Option<string?> snmpV3PrivPassOpt, Option<string> snmpV3PrivProtoOpt,
@@ -251,6 +252,7 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
             AdditionalContent = pr.GetValue(additionalContentOpt),
             Itemtype = pr.GetValue(itemtypeOpt),
             EsxItemtype = pr.GetValue(esxItemtypeOpt),
+            ScanHomeDirs = pr.GetValue(scanHomeDirsOpt),
             HttpPort = pr.GetValue(httpPortOpt),
             HttpTrust = pr.GetValue(httpTrustOpt),
             NoHttpd = pr.GetValue(noHttpdOpt),

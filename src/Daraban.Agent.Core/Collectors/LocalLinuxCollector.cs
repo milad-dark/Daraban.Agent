@@ -1,4 +1,5 @@
-﻿using Daraban.Agent.Core.Models;
+﻿using Daraban.Agent.Core.Config;
+using Daraban.Agent.Core.Models;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -16,7 +17,7 @@ namespace Daraban.Agent.Core.Collectors;
 [SupportedOSPlatform("linux")]
 public class LocalLinuxCollector
 {
-    public DeviceInventory CollectLocal()
+    public DeviceInventory CollectLocal(AgentOptions? options = null)
     {
         var content = new DeviceContent
         {
@@ -36,6 +37,8 @@ public class LocalLinuxCollector
         CollectProcesses(content);           // /proc/<pid>
         CollectInstalledSoftware(content);   // dpkg or rpm
         CollectBattery(content);             // /sys/class/power_supply or upower
+        if (options?.ScanHomeDirs == true)
+            CollectVirtualMachines(content); // *.vmx / *.vbox / *.qcow2 under home dirs
 
         return new DeviceInventory
         {
@@ -532,6 +535,23 @@ public class LocalLinuxCollector
         catch (Exception ex)
         {
             Console.WriteLine($"Error collecting battery info: {ex.Message}");
+        }
+    }
+
+    // ---------- Home-directory VM scan (scan-homedirs) ---------------------------
+
+    private static void CollectVirtualMachines(DeviceContent content)
+    {
+        try
+        {
+            var found = HomeDirScanner.ScanVmFiles(
+                HomeDirScanner.UnixHomeRoots(),
+                ["*.vmx", "*.vbox", "*.qcow2"]);
+            content.Software.AddRange(found);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error scanning home directories for virtual machines: {ex.Message}");
         }
     }
 }

@@ -12,7 +12,7 @@ public sealed class LocalInventoryTask : IAgentTask
 
     public async Task RunAsync(AgentOptions options, CancellationToken ct)
     {
-        var inventory = LocalCollectorFactory.CollectLocal();
+        var inventory = LocalCollectorFactory.CollectLocal(options);
         inventory.DeviceId = options.AgentId ?? options.Tag ?? Environment.MachineName;
 
         // The collector stores DeviceContent serialized as JSON; deserialize for the diff.

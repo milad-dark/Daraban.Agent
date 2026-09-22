@@ -134,6 +134,12 @@ public sealed class AgentOptions
     public string? AdditionalContent { get; set; }
 
     /// <summary>
+    /// Scan user home directories for virtual machines (any OS) and licenses (macOS only).
+    /// Mirrors glpi-agent's `scan-homedirs`. Off by default because it walks the filesystem.
+    /// </summary>
+    public bool ScanHomeDirs { get; set; } = false;
+
+    /// <summary>
     /// Inventory itemtype for GLPI 11+ custom asset types (mirrors glpi-agent `itemtype`).
     /// Empty/null keeps "Computer" for GLPI 10 compatibility. Example: Glpi\CustomAsset\ServerAsset.
     /// Applies to the inventory and remoteinventory tasks.
