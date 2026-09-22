@@ -147,6 +147,14 @@ public sealed class AgentOptions
     public bool ScanProfiles { get; set; } = false;
 
     /// <summary>
+    /// How the reported computer name is normalized (mirrors glpi-agent `assetname-support`):
+    ///   1 = short name (default): strip everything after the first dot ("host.domain" → "host")
+    ///   2 = as-found: keep the name exactly as the collector reported it
+    ///   3 = always FQDN: resolve to the fully qualified domain name when possible
+    /// </summary>
+    public int AssetNameSupport { get; set; } = 1;
+
+    /// <summary>
     /// Inventory itemtype for GLPI 11+ custom asset types (mirrors glpi-agent `itemtype`).
     /// Empty/null keeps "Computer" for GLPI 10 compatibility. Example: Glpi\CustomAsset\ServerAsset.
     /// Applies to the inventory and remoteinventory tasks.
