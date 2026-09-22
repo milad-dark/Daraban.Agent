@@ -1,4 +1,5 @@
-﻿using Daraban.Agent.Core.Models;
+﻿using Daraban.Agent.Core.Config;
+using Daraban.Agent.Core.Models;
 using Microsoft.Win32;
 using System.Management;
 using System.Runtime.Versioning;
@@ -9,7 +10,7 @@ namespace Daraban.Agent.Core.Collectors;
 [SupportedOSPlatform("windows")]
 public class LocalWindowsCollector
 {
-    public DeviceInventory CollectLocal()
+    public DeviceInventory CollectLocal(AgentOptions? options = null)
     {
         var content = new DeviceContent
         {
@@ -37,6 +38,8 @@ public class LocalWindowsCollector
         CollectPrinters(content);
         CollectInstalledSoftware(content);
         CollectBattery(content);
+        if (options?.ScanHomeDirs == true)
+            CollectVirtualMachines(content);
 
         return new DeviceInventory { Content = JsonSerializer.Serialize(content, new JsonSerializerOptions { WriteIndented = true }) };
     }
@@ -485,6 +488,23 @@ public class LocalWindowsCollector
         catch (Exception ex)
         {
             Console.WriteLine($"Error collecting installed software: {ex.Message}");
+        }
+    }
+
+    // ---------- Home-directory VM scan (scan-homedirs) ---------------------------
+
+    private static void CollectVirtualMachines(DeviceContent content)
+    {
+        try
+        {
+            var found = HomeDirScanner.ScanVmFiles(
+                HomeDirScanner.WindowsProfileRoots(),
+                ["*.vmx", "*.vbox", "*.vmcx"]);
+            content.Software.AddRange(found);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error scanning home directories for virtual machines: {ex.Message}");
         }
     }
 

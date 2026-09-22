@@ -1,4 +1,5 @@
-﻿using Daraban.Agent.Core.Models;
+﻿using Daraban.Agent.Core.Config;
+using Daraban.Agent.Core.Models;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -16,7 +17,7 @@ namespace Daraban.Agent.Core.Collectors;
 [SupportedOSPlatform("macos")]
 public class LocalMacCollector
 {
-    public DeviceInventory CollectLocal()
+    public DeviceInventory CollectLocal(AgentOptions? options = null)
     {
         var content = new DeviceContent
         {
@@ -36,6 +37,8 @@ public class LocalMacCollector
         CollectProcesses(content);           // Process.GetProcesses (cross-platform)
         CollectInstalledSoftware(content);   // system_profiler SPApplicationsDataType
         CollectBattery(content);             // pmset -g batt / ioreg
+        if (options?.ScanHomeDirs == true)
+            CollectLicenses(content);        // license/activation plists under ~/Library
 
         return new DeviceInventory
         {
@@ -509,6 +512,26 @@ public class LocalMacCollector
         catch (Exception ex)
         {
             Console.WriteLine($"Error collecting battery info: {ex.Message}");
+        }
+    }
+
+    // ---------- Home-directory license scan (scan-homedirs, macOS) -------------------
+
+    private static void CollectLicenses(DeviceContent content)
+    {
+        try
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var roots = new[]
+            {
+                Path.Combine(home, "Library", "Preferences"),
+                Path.Combine(home, "Library", "Application Support"),
+            };
+            content.Software.AddRange(HomeDirScanner.ScanLicensePlists(roots));
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error scanning home directory for licenses: {ex.Message}");
         }
     }
 }

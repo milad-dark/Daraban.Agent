@@ -1,4 +1,5 @@
-﻿using Daraban.Agent.Core.Models;
+﻿using Daraban.Agent.Core.Config;
+using Daraban.Agent.Core.Models;
 using System.Runtime.InteropServices;
 
 namespace Daraban.Agent.Core.Collectors;
@@ -10,16 +11,16 @@ namespace Daraban.Agent.Core.Collectors;
 /// </summary>
 public static class LocalCollectorFactory
 {
-    public static DeviceInventory CollectLocal()
+    public static DeviceInventory CollectLocal(AgentOptions? options = null)
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            return new LocalWindowsCollector().CollectLocal();
+            return new LocalWindowsCollector().CollectLocal(options);
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-            return new LocalLinuxCollector().CollectLocal();
+            return new LocalLinuxCollector().CollectLocal(options);
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            return new LocalMacCollector().CollectLocal();
+            return new LocalMacCollector().CollectLocal(options);
 
         throw new PlatformNotSupportedException(
             $"No local inventory collector implemented for {RuntimeInformation.OSDescription}");
