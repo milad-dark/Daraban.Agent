@@ -37,6 +37,8 @@ public class LocalWindowsCollector
         CollectProcesses(content);
         CollectPrinters(content);
         CollectInstalledSoftware(content);
+        if (options?.ScanProfiles == true)
+            CollectUserProfileSoftware(content);
         CollectBattery(content);
         if (options?.ScanHomeDirs == true)
             CollectVirtualMachines(content);
@@ -488,6 +490,73 @@ public class LocalWindowsCollector
         catch (Exception ex)
         {
             Console.WriteLine($"Error collecting installed software: {ex.Message}");
+        }
+    }
+
+    // ---------- Per-user profile software scan (scan-profiles) -------------------
+
+    /// <summary>
+    /// Enumerates HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList to get all
+    /// user SIDs, then reads each user's HKU\{SID}\Software\Microsoft\Windows\CurrentVersion\Uninstall
+    /// keys to catch per-user installs (Chrome, VS Code, etc.) missed by the machine-wide scan.
+    /// Results are merged into content.Software, deduplicated by name+version.
+    /// </summary>
+    private static void CollectUserProfileSoftware(DeviceContent content)
+    {
+        try
+        {
+            var sids = new List<string>();
+            using (var profileList = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList"))
+            {
+                if (profileList is null)
+                    return;
+                sids.AddRange(profileList.GetSubKeyNames());
+            }
+
+            var existing = content.Software
+                .Where(s => !string.IsNullOrWhiteSpace(s.Name))
+                .Select(s => (Name: s.Name!, Version: s.Version ?? ""))
+                .ToHashSet();
+
+            foreach (var sid in sids)
+            {
+                using var userUninstall = Registry.Users.OpenSubKey($@"{sid}\Software\Microsoft\Windows\CurrentVersion\Uninstall");
+                if (userUninstall is null)
+                    continue;
+
+                foreach (var keyName in userUninstall.GetSubKeyNames())
+                {
+                    using var key = userUninstall.OpenSubKey(keyName);
+                    var name = key?.GetValue("DisplayName")?.ToString();
+                    if (string.IsNullOrWhiteSpace(name))
+                        continue;
+
+                    var version = key?.GetValue("DisplayVersion")?.ToString();
+                    if (!existing.Add((name, version ?? "")))
+                    {
+                        // Duplicate of an entry already collected from HKLM/HKCU — backfill
+                        // fields that scan doesn't capture (e.g. InstallDate) instead of
+                        // discarding them with the duplicate.
+                        var dup = content.Software.FirstOrDefault(s => s.Name == name && (s.Version ?? "") == (version ?? ""));
+                        if (dup is not null && string.IsNullOrEmpty(dup.InstallDate))
+                            dup.InstallDate = key?.GetValue("InstallDate")?.ToString();
+                        continue;
+                    }
+
+                    content.Software.Add(new SoftwareInfo
+                    {
+                        Name = name,
+                        Version = version,
+                        IdentifyingNumber = keyName,
+                        Vendor = key?.GetValue("Publisher")?.ToString(),
+                        InstallDate = key?.GetValue("InstallDate")?.ToString(),
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error collecting per-user profile software: {ex.Message}");
         }
     }
 

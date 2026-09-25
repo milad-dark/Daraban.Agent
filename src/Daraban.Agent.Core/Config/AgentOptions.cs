@@ -140,6 +140,13 @@ public sealed class AgentOptions
     public bool ScanHomeDirs { get; set; } = false;
 
     /// <summary>
+    /// Scan per-user registry uninstall keys (HKU\{SID}\...\Uninstall) for software installed
+    /// only for a specific user (e.g. Chrome, VS Code user installs). Mirrors glpi-agent's
+    /// `scan-profiles`. Windows only; off by default.
+    /// </summary>
+    public bool ScanProfiles { get; set; } = false;
+
+    /// <summary>
     /// Inventory itemtype for GLPI 11+ custom asset types (mirrors glpi-agent `itemtype`).
     /// Empty/null keeps "Computer" for GLPI 10 compatibility. Example: Glpi\CustomAsset\ServerAsset.
     /// Applies to the inventory and remoteinventory tasks.
