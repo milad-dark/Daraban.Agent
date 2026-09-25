@@ -1,6 +1,8 @@
 ﻿using Daraban.Agent.Core.Config;
 using Daraban.Agent.Core.Models;
+using Daraban.Agent.Core.Tools;
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text.Json;
@@ -328,10 +330,13 @@ public class LocalMacCollector
                 {
                     foreach (var mon in monitors.EnumerateArray())
                     {
-                        content.Monitors.Add(new MonitorInfo
+                        var monitor = new MonitorInfo
                         {
                             Name = mon.TryGetProperty("_name", out var n) ? n.GetString() : null
-                        });
+                        };
+
+                        ApplySystemProfilerEdid(monitor, mon);
+                        content.Monitors.Add(monitor);
                     }
                 }
             }
@@ -343,6 +348,53 @@ public class LocalMacCollector
     }
 
     // ---------- Users --------------------------------------------------------------------
+
+    /// <summary>
+    /// system_profiler exposes the raw EDID block of each display as a hex string in
+    /// "_spdisplays_edid". Decode and parse it with the shared parser; fall back to the
+    /// vendor/product ID properties when the block is unavailable.
+    /// </summary>
+    private static void ApplySystemProfilerEdid(MonitorInfo monitor, JsonElement mon)
+    {
+        try
+        {
+            if (mon.TryGetProperty("_spdisplays_edid", out var edidEl) &&
+                edidEl.ValueKind == JsonValueKind.String &&
+                HexToBytes(edidEl.GetString()) is { Length: > 0 } edid &&
+                EdidParser.Parse(edid) is { } info)
+            {
+                monitor.EdidManufacturer = info.Manufacturer;
+                monitor.EdidPnpId = info.PnpId;
+                monitor.EdidSerial = info.Serial;
+                monitor.EdidWidth = info.WidthCm;
+                monitor.EdidHeight = info.HeightCm;
+                return;
+            }
+
+            // Fallback: vendor/product IDs reported directly by system_profiler.
+            if (mon.TryGetProperty("spdisplays_vendor-id", out var vendor) && vendor.ValueKind == JsonValueKind.String)
+                monitor.EdidPnpId = vendor.GetString()?.TrimStart('0');
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error parsing display EDID: {ex.Message}");
+        }
+    }
+
+    private static byte[]? HexToBytes(string? hex)
+    {
+        if (string.IsNullOrWhiteSpace(hex) || hex.Length % 2 != 0)
+            return null;
+
+        var bytes = new byte[hex.Length / 2];
+        for (var i = 0; i < bytes.Length; i++)
+        {
+            if (!byte.TryParse(hex.AsSpan(i * 2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b))
+                return null;
+            bytes[i] = b;
+        }
+        return bytes;
+    }
 
     private static void CollectUsers(DeviceContent content)
     {

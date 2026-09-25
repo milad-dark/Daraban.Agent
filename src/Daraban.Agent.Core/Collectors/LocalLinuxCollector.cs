@@ -1,5 +1,6 @@
 ﻿using Daraban.Agent.Core.Config;
 using Daraban.Agent.Core.Models;
+using Daraban.Agent.Core.Tools;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -32,6 +33,7 @@ public class LocalLinuxCollector
         CollectStorage(content);             // lsblk
         CollectNetwork(content);             // /sys/class/net + ip addr
         CollectVideoControllers(content);    // lspci
+        CollectMonitors(content);            // /sys/class/drm/*/edid
         CollectUsersAndGroups(content);      // /etc/passwd, /etc/group
         CollectServices(content);            // systemctl
         CollectProcesses(content);           // /proc/<pid>
@@ -351,6 +353,54 @@ public class LocalLinuxCollector
         catch (Exception ex)
         {
             Console.WriteLine($"Error collecting video controller info: {ex.Message}");
+        }
+    }
+
+    // ---------- Monitors (EDID from /sys/class/drm) --------------------------------
+
+    /// <summary>
+    /// Reads the raw 128-byte EDID block exposed for each connected display connector
+    /// under /sys/class/drm (e.g. card0-HDMI-A-1/edid, card0-eDP-1/edid) and parses
+    /// manufacturer, serial and physical size, mirroring glpi-agent's monitor handling.
+    /// </summary>
+    private static void CollectMonitors(DeviceContent content)
+    {
+        try
+        {
+            var drmRoot = Path.Combine("/sys", "class", "drm");
+            if (!Directory.Exists(drmRoot))
+                return;
+
+            foreach (var edidPath in Directory.EnumerateFiles(drmRoot, "edid", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    var edid = File.ReadAllBytes(edidPath);
+                    if (EdidParser.Parse(edid) is not { } info)
+                        continue;
+
+                    // Connector name, e.g. "card0-HDMI-A-1" from "card0-HDMI-A-1/edid".
+                    var connector = Path.GetFileName(Path.GetDirectoryName(edidPath)) ?? "unknown";
+
+                    content.Monitors.Add(new MonitorInfo
+                    {
+                        Name = connector,
+                        EdidManufacturer = info.Manufacturer,
+                        EdidPnpId = info.PnpId,
+                        EdidSerial = info.Serial,
+                        EdidWidth = info.WidthCm,
+                        EdidHeight = info.HeightCm,
+                    });
+                }
+                catch (IOException)
+                {
+                    // Connector present but no EDID readable (disconnected port) — skip.
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error collecting monitor EDID info: {ex.Message}");
         }
     }
 
