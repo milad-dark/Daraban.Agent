@@ -16,6 +16,14 @@ public class Worker(IEnumerable<IAgentTask> tasks, AgentStatusTracker status, IO
         var runner = new AgentRunner(tasks, status);
         logger.LogInformation("Agent service starting. Tasks: {Tasks}", string.Join(", ", AgentRunner.ResolveTaskNames(options.Value)));
 
+        // Serve staged deploy files to same-subnet peers (P2P deploy sharing).
+        // Started here (not in Program.cs) so the host's graceful shutdown stops it.
+        if (!options.Value.NoP2p)
+        {
+            P2pClient.ConfigurePort(options.Value.P2pPort);
+            P2pServer.Start(options.Value);
+        }
+
         try
         {
             await runner.RunForeverAsync(options.Value, stoppingToken);

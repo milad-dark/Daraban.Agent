@@ -67,6 +67,10 @@ class Program
         // ---- Deploy --------------------------------------------------------------------------------
         var deployWorkDirOpt = new Option<string?>("--deploy-workdir") { Description = "Directory to stage downloaded deploy files (default: temp)" };
 
+        // ---- P2P file sharing (deploy) ---------------------------------------------------------------
+        var noP2pOpt = new Option<bool>("--no-p2p") { Description = "Disable peer-to-peer deploy sharing: never serve staged files to peers and never download from them", DefaultValueFactory = _ => false };
+        var p2pPortOpt = new Option<int>("--p2p-port") { Description = "TCP port the P2P file server listens on for same-subnet peers", DefaultValueFactory = _ => 62355 };
+
         // ---- ESX / vCenter --------------------------------------------------------------------------
         var esxHostOpt = new Option<string?>("--esx-host") { Description = "vCenter/ESXi hostname or IP" };
         var esxUserOpt = new Option<string?>("--esx-user") { Description = "vCenter/ESXi username" };
@@ -91,6 +95,7 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
             snmpVersionOpt, snmpV3UserOpt, snmpV3AuthPassOpt, snmpV3AuthProtoOpt, snmpV3PrivPassOpt, snmpV3PrivProtoOpt,
             wolMacOpt, wolBroadcastOpt,
             deployWorkDirOpt,
+            noP2pOpt, p2pPortOpt,
             esxHostOpt, esxUserOpt, esxPasswordOpt,
             methodOpt, hostOpt, userOpt, passOpt, fileOpt,
             agentIdOption, gzipOption,
@@ -105,7 +110,7 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
             var options = BuildOptions(pr, serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprintOpt, fusionCompatOpt, tasksOpt, noTaskOpt,
                 delayOpt, lazyOpt, onceOpt, fullInventoryPostponeOpt, requiredCategoryOpt, additionalContentOpt, noCategoryOpt, itemtypeOpt, esxItemtypeOpt, scanHomeDirsOpt, scanProfilesOpt, assetNameSupportOpt, httpPortOpt, httpTrustOpt, noHttpdOpt,
                 ipRangeOpt, communityOpt, snmpTimeoutOpt, threadsOpt, snmpRetriesOpt, snmpVersionOpt, snmpV3UserOpt, snmpV3AuthPassOpt, snmpV3AuthProtoOpt, snmpV3PrivPassOpt, snmpV3PrivProtoOpt,
-                wolMacOpt, wolBroadcastOpt, deployWorkDirOpt, esxHostOpt, esxUserOpt, esxPasswordOpt, agentIdOption, gzipOption);
+                wolMacOpt, wolBroadcastOpt, deployWorkDirOpt, noP2pOpt, p2pPortOpt, esxHostOpt, esxUserOpt, esxPasswordOpt, agentIdOption, gzipOption);
 
             return await RunAgentAsync(options, ct);
         });
@@ -134,6 +139,13 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
         if (!options.NoHttpd)
             _ = RunStatusServerAsync(options.HttpPort, options.HttpTrust, status, ct);
 
+        // Serve staged deploy files to same-subnet peers (P2P deploy sharing).
+        if (!options.NoP2p)
+        {
+            P2pClient.ConfigurePort(options.P2pPort);
+            P2pServer.Start(options);
+        }
+
         // Ctrl+C should stop the loop cleanly instead of killing the process mid-task.
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
@@ -148,6 +160,11 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
         catch (OperationCanceledException)
         {
             Console.WriteLine("\n[agent] Stopped.");
+        }
+        finally
+        {
+            // Release the P2P port promptly on Ctrl+C / one-shot exit.
+            await P2pServer.StopAsync();
         }
 
         return 0;
@@ -235,7 +252,7 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
         Option<int> httpPortOpt, Option<string?> httpTrustOpt, Option<bool> noHttpdOpt,
         Option<string?> ipRangeOpt, Option<string> communityOpt, Option<int> snmpTimeoutOpt, Option<int> threadsOpt, Option<int> snmpRetriesOpt,
         Option<string> snmpVersionOpt, Option<string?> snmpV3UserOpt, Option<string?> snmpV3AuthPassOpt, Option<string> snmpV3AuthProtoOpt, Option<string?> snmpV3PrivPassOpt, Option<string> snmpV3PrivProtoOpt,
-        Option<string?> wolMacOpt, Option<string?> wolBroadcastOpt, Option<string?> deployWorkDirOpt,
+        Option<string?> wolMacOpt, Option<string?> wolBroadcastOpt, Option<string?> deployWorkDirOpt, Option<bool> noP2pOpt, Option<int> p2pPortOpt,
         Option<string?> esxHostOpt, Option<string?> esxUserOpt, Option<string?> esxPasswordOpt, Option<string> agentId, Option<bool> gzipOption)
     {
         var options = new AgentOptions
@@ -273,6 +290,8 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
             SnmpV3PrivProtocol = pr.GetValue(snmpV3PrivProtoOpt) ?? "AES",
             WakeOnLanBroadcast = pr.GetValue(wolBroadcastOpt),
             DeployWorkDir = pr.GetValue(deployWorkDirOpt),
+            NoP2p = pr.GetValue(noP2pOpt),
+            P2pPort = pr.GetValue(p2pPortOpt),
             EsxHost = pr.GetValue(esxHostOpt),
             EsxUser = pr.GetValue(esxUserOpt),
             EsxPassword = pr.GetValue(esxPasswordOpt),
