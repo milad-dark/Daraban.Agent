@@ -128,6 +128,9 @@ public sealed class NetDiscoveryTask : IAgentTask
             .OrderBy(r => ParseForSort(r.IpAddress))
             .ToList();
 
+        // Remember found hosts as P2P deploy peers (see DeployTask/P2pClient).
+        P2pClient.RememberPeers(known.Select(h => h.IpAddress));
+
         await DeliverAsync(options, known, ct);
     }
 

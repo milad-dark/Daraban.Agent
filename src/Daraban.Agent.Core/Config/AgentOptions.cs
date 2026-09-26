@@ -198,6 +198,26 @@ public sealed class AgentOptions
     // ---- Deploy ----------------------------------------------------------------
     public string? DeployWorkDir { get; set; }     // where downloaded packages are staged (defaults to temp)
 
+    // ---- P2P file sharing (deploy task, mirrors glpi-agent's no-p2p) ------------
+    /// <summary>
+    /// When true, deploy downloads never come from peers and this agent never serves
+    /// files to peers. Mirrors glpi-agent's `no-p2p`.
+    /// </summary>
+    public bool NoP2p { get; set; } = false;
+
+    /// <summary>
+    /// TCP port the local P2P file server binds for peer downloads.
+    /// (glpi-agent uses 62354 for both its httpd and P2P; we keep P2P on its own
+    /// port so it can be firewalled or disabled independently of /status.)
+    /// </summary>
+    public int P2pPort { get; set; } = 62355;
+
+    /// <summary>
+    /// Maximum number of peers this agent serves deploy files to simultaneously.
+    /// Guards upload bandwidth so P2P cannot saturate the client machine.
+    /// </summary>
+    public int P2pMaxConcurrent { get; set; } = 4;
+
     // ---- ESX / vCenter -----------------------------------------------------------
     public string? EsxHost { get; set; }           // vCenter/ESXi hostname or IP
     public string? EsxUser { get; set; }
