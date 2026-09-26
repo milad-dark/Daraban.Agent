@@ -214,13 +214,25 @@ public static class P2pClient
             if (IsOwnAddress(ip))
                 continue;
 
+            // ARP tables contain the subnet's network and broadcast addresses
+            // (e.g. 192.168.0.0 / 192.168.0.255) — no agent lives there.
+            if (IsNetworkOrBroadcastAddress(ip))
+                continue;
+
             seen.Add(source);
             candidates.Add(source);
         }
         return candidates;
     }
 
-    private static bool IsOwnAddress(IPAddress candidate)
+    private static bool IsNetworkOrBroadcastAddress(IPAddress ip)
+    {
+        var bytes = ip.GetAddressBytes();
+        // Within the /24 trust boundary, .0 (network) and .255 (broadcast) are never peers.
+        return bytes[^1] is 0 or 255;
+    }
+
+    internal static bool IsOwnAddress(IPAddress candidate)
     {
         var c = Normalize(candidate);
         if (c is null)

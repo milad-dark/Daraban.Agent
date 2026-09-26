@@ -16,12 +16,16 @@ public class Worker(IEnumerable<IAgentTask> tasks, AgentStatusTracker status, IO
         var runner = new AgentRunner(tasks, status);
         logger.LogInformation("Agent service starting. Tasks: {Tasks}", string.Join(", ", AgentRunner.ResolveTaskNames(options.Value)));
 
-        // Serve staged deploy files to same-subnet peers (P2P deploy sharing).
-        // Started here (not in Program.cs) so the host's graceful shutdown stops it.
+        // Serve staged deploy files to same-subnet peers (P2P deploy sharing) and
+        // announce/listen for peers. Started here (not in Program.cs) so the host's
+        // graceful shutdown also tears the P2P surface down.
+        P2pAnnouncer? p2pAnnouncer = null;
         if (!options.Value.NoP2p)
         {
             P2pClient.ConfigurePort(options.Value.P2pPort);
             P2pServer.Start(options.Value);
+            p2pAnnouncer = new P2pAnnouncer(options.Value);
+            p2pAnnouncer.Start();
         }
 
         try
@@ -36,6 +40,10 @@ public class Worker(IEnumerable<IAgentTask> tasks, AgentStatusTracker status, IO
         {
             logger.LogError(ex, "Agent scheduler crashed unexpectedly.");
             throw;
+        }
+        finally
+        {
+            p2pAnnouncer?.Dispose();
         }
 
         logger.LogInformation("Agent service stopping.");

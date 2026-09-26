@@ -11,8 +11,9 @@ namespace Daraban.Agent.Core.Agents;
 ///  1. Ask the server for pending jobs for this machine id.
 ///  2. Download every associated file into a per-job work directory — first from
 ///     same-subnet peers that already staged the file (P2P, unless <see cref="AgentOptions.NoP2p"/>),
-///     falling back to the central server. This keeps a fleet from saturating the
-///     server's bandwidth on popular packages.
+///     falling back to the central server with retry/backoff. Verified files are kept
+///     across runs and re-used (resume), so a failed download never restarts from
+///     scratch. This keeps a fleet from saturating the server's bandwidth.
 ///  3. Verify each file's SHA-256 against the manifest before running anything
 ///     (refuses to execute if a checksum doesn't match — this is the integrity
 ///     gate that makes remote software push safe to leave switched on).
@@ -64,7 +65,7 @@ public sealed class DeployTask : IAgentTask
         }
     }
 
-    private static async Task<DeployJobResult> RunJobAsync(Models.DeployJob job, AgentOptions options, CancellationToken ct)
+    internal static async Task<DeployJobResult> RunJobAsync(Models.DeployJob job, AgentOptions options, CancellationToken ct)
     {
         var deployRoot = Path.Combine(
             string.IsNullOrWhiteSpace(options.DeployWorkDir) ? Path.GetTempPath() : options.DeployWorkDir,
@@ -93,12 +94,32 @@ public sealed class DeployTask : IAgentTask
             ct.ThrowIfCancellationRequested();
             var destPath = Path.Combine(workDir, file.FileName);
 
-            // 1a. P2P first: same-subnet peers that already verified and staged this exact
+            // 1a. Resume: a previous run may have staged and verified this exact file
+            //     already — skip the network entirely (both P2P and server).
+            if (!string.IsNullOrWhiteSpace(file.Sha256) && File.Exists(destPath))
+            {
+                var existing = await ComputeSha256Async(destPath, ct);
+                if (string.Equals(existing, file.Sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine($"[deploy] {file.FileName}: already staged (hash matches), skipping download.");
+                    if (!options.NoP2p)
+                        P2pRegistry.Register(file.Sha256, destPath); // re-seed after restart
+                    continue;
+                    // (fall through to the next file — file is verified)
+                }
+
+                // Wrong hash on disk → truncated or corrupted leftover; delete and re-download.
+                Console.WriteLine($"[deploy] {file.FileName}: stale partial on disk (hash mismatch), re-downloading.");
+                File.Delete(destPath);
+            }
+
+            // 1b. P2P first: same-subnet peers that already verified and staged this exact
             //     content (hash-keyed) serve it to us, keeping the server out of the hot path.
+            //     Peers come from UDP announcements (4.2) plus the ARP fallback.
             var cameFromPeer = false;
             if (!options.NoP2p && options.P2pPort > 0 && !string.IsNullOrWhiteSpace(file.Sha256))
             {
-                var peers = P2pClient.GetCandidatePeers();
+                var peers = P2pServer.GetPeerIps();
                 if (peers.Count > 0)
                 {
                     var servedBy = await P2pClient.TryDownloadAsync(
@@ -111,22 +132,52 @@ public sealed class DeployTask : IAgentTask
                 }
             }
 
-            // 1b. Fall back to the central server when no peer had the file.
+            // 1c. Fall back to the central server — with retries and exponential backoff
+            //     (4.3b): attempt failures wait 1s, 2s, 4s… before trying again.
             if (!cameFromPeer)
             {
-                try
+                var maxAttempts = Math.Max(1, options.DeployMaxRetries);
+                var downloaded = false;
+                Exception? lastError = null;
+
+                for (var attempt = 0; attempt < maxAttempts; attempt++)
                 {
-                    await using var stream = await http.GetStreamAsync(file.Url, ct);
-                    await using var fs = File.Create(destPath);
-                    await stream.CopyToAsync(fs, ct);
+                    ct.ThrowIfCancellationRequested();
+                    // Per-attempt timeout: a wedged server must fail fast into the retry
+                    // loop instead of stalling the whole job for HttpClient's default 100s.
+                    using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    attemptCts.CancelAfter(TimeSpan.FromSeconds(15));
+                    try
+                    {
+                        await using var stream = await http.GetStreamAsync(file.Url, attemptCts.Token);
+                        await using var fs = File.Create(destPath);
+                        await stream.CopyToAsync(fs, attemptCts.Token);
+                        downloaded = true;
+                        break;
+                    }
+                    catch (Exception ex) when (ex is HttpRequestException or IOException or System.Net.Sockets.SocketException
+                                               || (ex is OperationCanceledException && !ct.IsCancellationRequested))
+                    {
+                        // Network failure, reset, per-attempt timeout (TaskCanceledException
+                        // with the run-level token untouched) — all retryable. User
+                        // cancellation is not.
+                        lastError = ex;
+                        var moreAttempts = attempt + 1 < maxAttempts;
+                        Console.WriteLine($"[deploy] {file.FileName}: attempt {attempt + 1}/{maxAttempts} failed ({ex.Message})" +
+                                          (moreAttempts ? $" — retrying in {(int)Math.Pow(2, attempt)}s." : "."));
+
+                        if (moreAttempts)
+                            await Task.Delay((int)Math.Pow(2, attempt) * 1000, ct);
+                    }
                 }
-                catch (Exception ex)
+
+                if (!downloaded)
                 {
                     return new DeployJobResult
                     {
                         JobId = job.JobId,
                         Status = DeployStatus.Failed,
-                        Message = $"Download failed for {file.FileName}: {ex.Message}"
+                        Message = $"Download failed for {file.FileName} after {maxAttempts} attempt(s): {lastError?.Message}"
                     };
                 }
             }

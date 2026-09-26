@@ -3,6 +3,9 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Sockets;
 
 namespace Daraban.Agent.Core.Agents;
 
@@ -29,8 +32,64 @@ public static class P2pServer
     private static int _activeUploads;
     private static WebApplication? _app;
 
-    private static readonly string[] LoopbackAddresses =
-        ["127.0.0.1", "::1", "localhost"];
+    // 4.2b: peers discovered via P2pAnnouncer's UDP announcements (IP → last seen).
+    private static readonly ConcurrentDictionary<IPAddress, DateTime> Peers = new();
+
+    /// <summary>Peers not seen within this window are dropped from the peer list.</summary>
+    public static readonly TimeSpan PeerExpiry = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// Records an announcing peer. Called by <see cref="P2pAnnouncer"/>'s listener for
+    /// every validated same-subnet announcement.
+    /// </summary>
+    public static void RememberPeer(IPAddress ip) => RememberPeer(ip, DateTime.UtcNow);
+
+    /// <summary>
+    /// Records a peer with an explicit last-seen timestamp (internal: lets tests
+    /// simulate entries that should already be expired).
+    /// </summary>
+    internal static void RememberPeer(IPAddress ip, DateTime lastSeenUtc)
+    {
+        if (ip.AddressFamily != AddressFamily.InterNetwork)
+            return;
+        Peers[ip] = lastSeenUtc;
+    }
+
+    /// <summary>
+    /// Drops all remembered peers (tests and subnet-change resets).
+    /// </summary>
+    internal static void ClearPeers() => Peers.Clear();
+
+    /// <summary>
+    /// Current live peers: UDP-announced IPs (expired entries dropped) merged with the
+    /// ARP-table candidates from <see cref="P2pClient"/>. Deduplicated, order-stable.
+    /// This is the list DeployTask feeds into P2P-first downloads.
+    /// </summary>
+    public static List<string> GetPeerIps()
+    {
+        var now = DateTime.UtcNow;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<string>();
+
+        foreach (var key in Peers.Keys)
+        {
+            if (Peers[key] < now - PeerExpiry)
+            {
+                Peers.TryRemove(key, out _);
+                continue;
+            }
+            var s = key.ToString();
+            if (seen.Add(s))
+                result.Add(s);
+        }
+
+        foreach (var arpPeer in P2pClient.GetCandidatePeers())
+        {
+            if (seen.Add(arpPeer))
+                result.Add(arpPeer);
+        }
+        return result;
+    }
 
     /// <summary>
     /// Starts the P2P file server on the given port. Returns immediately; the server runs
@@ -188,5 +247,14 @@ public static class P2pRegistry
     {
         lock (Lock)
             HashToPath.Clear();
+    }
+
+    /// <summary>
+    /// Snapshot of every shareable hash — the P2pAnnouncer broadcast payload.
+    /// </summary>
+    public static IReadOnlyList<string> GetHashes()
+    {
+        lock (Lock)
+            return HashToPath.Keys.ToList();
     }
 }

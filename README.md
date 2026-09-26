@@ -147,7 +147,11 @@ dotnet run --project Daraban.Agent.Cli -- --tasks esx \
 
 Deploy jobs are queued server-side. The agent pulls pending jobs for its device id (`--tag`), downloads each file, verifies SHA-256 checksums (refuses to run anything that fails the checksum gate), runs the install command in the staged folder, and reports the result back.
 
-**P2P sharing (on by default).** Before pulling from the server, the agent asks same-subnet peers that already staged the identical file (matched by SHA-256) to serve it. Verified files are re-shared to peers, so only the first machine on each subnet downloads from the server. Safeguards: peers must be in the local IPv4 /24, downloads are re-verified against the manifest hash, a bad peer's content is rejected and retried elsewhere, and upload concurrency is capped (`P2pMaxConcurrent`, default 4). Disable entirely with `--no-p2p`; move the port with `--p2p-port` (default 62355, must be identical fleet-wide and reachable inbound between agents). Peers come from netdiscovery results plus the ARP table, so run `netdiscovery` in the same schedule as `deploy` for best hit rates.
+**P2P sharing (on by default).** Before pulling from the server, the agent asks same-subnet peers that already staged the identical file (matched by SHA-256) to serve it. Verified files are re-shared to peers, so only the first machine on each subnet downloads from the server. Safeguards: peers must be in the local IPv4 /24, downloads are re-verified against the manifest hash, a bad peer's content is rejected and retried elsewhere, and upload concurrency is capped (`P2pMaxConcurrent`, default 4). Disable entirely with `--no-p2p`; move the port with `--p2p-port` (default 62355, must be identical fleet-wide and reachable inbound between agents).
+
+**Peer discovery.** Every 30 seconds each agent broadcasts a small UDP packet on `P2pPort` (`{"agentId": ..., "files": [...shareable hashes...]}`); listeners validate the sender is same-subnet (ignore self, foreign subnets, and non-JSON chatter) and remember it for 2 minutes. The live peer list is also augmented from the ARP table — so discovery works even without `netdiscovery` in the schedule — and network (`.0`) and broadcast (`.255`) addresses are never treated as peers. UDP 62355 must therefore be allowed *inbound and outbound* between agents on the same subnet.
+
+**Retry and resume.** Downloads retry up to `DeployMaxRetries` (default 3) attempts with exponential backoff (1s, 2s, 4s…), each attempt capped at a 15-second hang timeout. Files already staged and hash-verified from a previous run are re-used without any network traffic (and re-seeded into P2P sharing after a restart); a file on disk with the wrong hash is treated as a truncated leftover, deleted, and re-downloaded in full (no HTTP Range resume — the server side can't be assumed to support it).
 
 ```bash
 # 1. Queue a job on the server's deploy page
@@ -294,6 +298,7 @@ The Windows service / systemd unit reads everything from the `"Agent"` section �
     "NoP2p": false,                           // disable P2P deploy sharing (glpi-agent no-p2p)
     "P2pPort": 62355,                         // port peers serve staged files on (fleet-wide constant)
     "P2pMaxConcurrent": 4,                    // max simultaneous peer uploads
+    "DeployMaxRetries": 3,                    // download attempts per file (backoff 1s, 2s, 4s…)
 
     "EsxHost": null, "EsxUser": null, "EsxPassword": null,
     "EsxIgnoreSslErrors": true,
@@ -357,7 +362,7 @@ The Windows service / systemd unit reads everything from the `"Agent"` section �
 | `--wol-broadcast <ip>` | `255.255.255.255` | Broadcast address for WoL packets |
 | `--deploy-workdir <dir>` | temp | Staging directory for deploy downloads |
 | `--no-p2p` | off | Disable P2P deploy sharing (never serve or fetch from peers) |
-| `--p2p-port <n>` | `62355` | TCP port for the P2P file server (must match fleet-wide) |
+| `--p2p-port <n>` | `62355` | TCP/UDP port for the P2P file server and peer announcements (must match fleet-wide) |
 | `--esx-host/--esx-user/--esx-password` | — | vCenter/ESXi credentials |
 | `--full-inventory-postpone <n>` | `14` | Runs between full inventories (0 = always full) |
 | `--required-category <list>` | — | Categories always kept in partial inventories |
@@ -447,6 +452,7 @@ There is no packaged plist; either run the published binary in a terminal (`./Da
 | Outbound TCP | server port (e.g. 5000/443) | inventory/deploy/collect reporting |
 | Inbound TCP | `HttpPort` (default 62354) | local `/status` endpoint (disable with `NoHttpd: true`) |
 | Inbound TCP | `P2pPort` (default 62355) | P2P deploy sharing from same-subnet agents (disable with `NoP2p: true`) |
+| Inbound+Outbound UDP | `P2pPort` (default 62355) | P2P peer announcements, 30s broadcast interval |
 | Outbound UDP | 161 | SNMP (netinventory) |
 | Outbound UDP | 9 | Wake-on-LAN magic packets |
 | Outbound TCP | 22 / 5985 / 5986 | SSH / WinRM (remote task, `--method` tests) |
