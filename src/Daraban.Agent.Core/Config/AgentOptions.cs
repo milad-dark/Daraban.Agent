@@ -198,6 +198,13 @@ public sealed class AgentOptions
     // ---- Deploy ----------------------------------------------------------------
     public string? DeployWorkDir { get; set; }     // where downloaded packages are staged (defaults to temp)
 
+    /// <summary>
+    /// Number of download attempts per deploy file before the job fails.
+    /// Retries wait 1s, 2s, 4s… between attempts (exponential backoff), mirroring
+    /// glpi-agent's resilient download behavior.
+    /// </summary>
+    public int DeployMaxRetries { get; set; } = 3;
+
     // ---- P2P file sharing (deploy task, mirrors glpi-agent's no-p2p) ------------
     /// <summary>
     /// When true, deploy downloads never come from peers and this agent never serves

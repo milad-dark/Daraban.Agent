@@ -139,11 +139,15 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
         if (!options.NoHttpd)
             _ = RunStatusServerAsync(options.HttpPort, options.HttpTrust, status, ct);
 
-        // Serve staged deploy files to same-subnet peers (P2P deploy sharing).
+        // Serve staged deploy files to same-subnet peers (P2P deploy sharing)
+        // and broadcast/listen for peer announcements so peers find each other.
+        P2pAnnouncer? p2pAnnouncer = null;
         if (!options.NoP2p)
         {
             P2pClient.ConfigurePort(options.P2pPort);
             P2pServer.Start(options);
+            p2pAnnouncer = new P2pAnnouncer(options);
+            p2pAnnouncer.Start();
         }
 
         // Ctrl+C should stop the loop cleanly instead of killing the process mid-task.
@@ -164,6 +168,7 @@ serverOpt, localOpt, tagOpt, apiKeyOpt, proxyOpt, sslKeystoreOpt, sslFingerprint
         finally
         {
             // Release the P2P port promptly on Ctrl+C / one-shot exit.
+            p2pAnnouncer?.Dispose();
             await P2pServer.StopAsync();
         }
 
