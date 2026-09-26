@@ -1,5 +1,6 @@
 ﻿using Daraban.Agent.Core.Config;
 using Daraban.Agent.Core.Models;
+using Daraban.Agent.Core.Tools;
 using Microsoft.Win32;
 using System.Management;
 using System.Runtime.Versioning;
@@ -220,18 +221,77 @@ public class LocalWindowsCollector
                 if (mo["Active"] is bool active && !active)
                     continue;
 
-                content.Monitors.Add(new MonitorInfo
+                var monitor = new MonitorInfo
                 {
                     Name = GetMonitorString(mo["UserFriendlyName"]),
                     Manufacturer = GetMonitorString(mo["ManufacturerName"]),
                     Serial = GetMonitorString(mo["SerialNumberID"])
-                });
+                };
+
+                ApplyRegistryEdid(monitor, mo["InstanceName"]?.ToString());
+                content.Monitors.Add(monitor);
             }
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Error collecting monitor info: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Reads the raw EDID block for a monitor from
+    /// HKLM\SYSTEM\CurrentControlSet\Enum\DISPLAY\{pnp-id}\{instance}\Device Parameters\EDID
+    /// and fills the Edid* fields. The WMI InstanceName looks like
+    /// "DISPLAY\DELA021\5&amp;2f3a4b5&amp;0&amp;UID256" — segment 0 is the literal "DISPLAY" prefix,
+    /// segment 1 is the PNP id and segment 2 is the device instance.
+    /// WMI may append an index suffix (e.g. "...UID256_0") that is absent from the registry
+    /// key name, so fall back to the name with the trailing "_N" stripped.
+    /// </summary>
+    private static void ApplyRegistryEdid(MonitorInfo monitor, string? instanceName)
+    {
+        if (string.IsNullOrWhiteSpace(instanceName))
+            return;
+
+        try
+        {
+            var parts = instanceName.Split('\\');
+            if (parts.Length < 3)
+                return;
+
+            var edid = ReadRegistryEdid(parts[1], parts[2])
+                ?? ReadRegistryEdid(parts[1], StripInstanceIndexSuffix(parts[2]));
+            if (edid is not null)
+                ApplyEdid(monitor, edid);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error reading monitor EDID from registry: {ex.Message}");
+        }
+    }
+
+    private static byte[]? ReadRegistryEdid(string pnpId, string instance)
+    {
+        using var key = Registry.LocalMachine.OpenSubKey(
+            $@"SYSTEM\CurrentControlSet\Enum\DISPLAY\{pnpId}\{instance}\Device Parameters");
+        return key?.GetValue("EDID") as byte[];
+    }
+
+    private static string StripInstanceIndexSuffix(string instance)
+    {
+        var underscore = instance.LastIndexOf('_');
+        return underscore > 0 ? instance[..underscore] : instance;
+    }
+
+    private static void ApplyEdid(MonitorInfo monitor, byte[] edid)
+    {
+        if (EdidParser.Parse(edid) is not { } info)
+            return;
+
+        monitor.EdidManufacturer = info.Manufacturer;
+        monitor.EdidPnpId = info.PnpId;
+        monitor.EdidSerial = info.Serial;
+        monitor.EdidWidth = info.WidthCm;
+        monitor.EdidHeight = info.HeightCm;
     }
     // Helper method to convert WMI byte arrays to strings
     private static string? GetMonitorString(object value)

@@ -157,6 +157,11 @@ public class MonitorInfo
     public string? Name { get; set; }
     public string? Manufacturer { get; set; }
     public string? Serial { get; set; }
+    public string? EdidManufacturer { get; set; }
+    public string? EdidSerial { get; set; }
+    public string? EdidPnpId { get; set; }
+    public int? EdidWidth { get; set; }
+    public int? EdidHeight { get; set; }
 }
 
 public class AudioDevice

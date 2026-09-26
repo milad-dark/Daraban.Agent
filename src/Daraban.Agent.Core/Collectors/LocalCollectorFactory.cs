@@ -1,5 +1,6 @@
 ﻿using Daraban.Agent.Core.Config;
 using Daraban.Agent.Core.Models;
+using Daraban.Agent.Core.Tools;
 using System.Runtime.InteropServices;
 
 namespace Daraban.Agent.Core.Collectors;
@@ -13,16 +14,29 @@ public static class LocalCollectorFactory
 {
     public static DeviceInventory CollectLocal(AgentOptions? options = null)
     {
+        DeviceInventory inventory;
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            return new LocalWindowsCollector().CollectLocal(options);
+            inventory = new LocalWindowsCollector().CollectLocal(options);
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            inventory = new LocalLinuxCollector().CollectLocal(options);
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            inventory = new LocalMacCollector().CollectLocal(options);
+        else
+            throw new PlatformNotSupportedException(
+                $"No local inventory collector implemented for {RuntimeInformation.OSDescription}");
 
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-            return new LocalLinuxCollector().CollectLocal(options);
+        // Normalize the reported computer name (mirrors glpi-agent `assetname-support`).
+        // The collector serializes DeviceContent as JSON, so rewrite it there.
+        if (options is not null)
+        {
+            var content = System.Text.Json.JsonSerializer.Deserialize<DeviceContent>(inventory.Content);
+            if (content is not null)
+            {
+                content.ComputerName = AssetNameResolver.Resolve(content.ComputerName ?? "", options.AssetNameSupport);
+                inventory.Content = System.Text.Json.JsonSerializer.Serialize(content);
+            }
+        }
 
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            return new LocalMacCollector().CollectLocal(options);
-
-        throw new PlatformNotSupportedException(
-            $"No local inventory collector implemented for {RuntimeInformation.OSDescription}");
+        return inventory;
     }
 }
